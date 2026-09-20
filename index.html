@@ -176,6 +176,36 @@
         display: flex; align-items: flex-start; justify-content: space-between; gap: 22px 34px; flex-wrap: wrap;
     }
     .dashboard-footer:empty { display: none; }
+    /* 第六十四轮：图表下方 / 免责声明上方的推广位 —— 淡色卡片，品牌红仅作强调条 / 按钮，简洁专业 */
+    .dashboard-promo {
+        margin: 24px 40px 0; padding: 22px 28px; background: #fff;
+        border: 1px solid var(--border); border-left: 4px solid var(--brand-red);
+        border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 24px;
+    }
+    .dashboard-promo:empty { display: none; }
+    .dashboard-promo .promo-text { flex: 1 1 auto; min-width: 0; }
+    .dashboard-promo .promo-title { font-size: 18px; font-weight: 700; color: var(--primary); margin: 0 0 6px; line-height: 1.35; }
+    .dashboard-promo .promo-desc { font-size: 13.5px; line-height: 1.6; color: var(--text-muted); margin: 0; }
+    .dashboard-promo .promo-cta { flex: 0 0 auto; }
+    .dashboard-promo .promo-btn {
+        display: inline-block; background: var(--brand-red); color: #fff; font-weight: 600; font-size: 14px;
+        font-style: italic; padding: 10px 20px; border-radius: 6px; text-decoration: none; white-space: nowrap;
+    }
+    .dashboard-promo .promo-btn:hover { background: #5C0000; }
+    /* 图片模式：整块图片，浅边框、无左强调条 */
+    .dashboard-promo.promo-image { background: #fff; border: 1px solid var(--border); border-left: 1px solid var(--border); padding: 12px; flex-direction: column; align-items: stretch; }
+    .dashboard-promo.promo-image .promo-img { width: 100%; display: block; border-radius: 8px; }
+    .dashboard-promo.promo-image .promo-img-link { display: block; text-decoration: none; }
+    .dashboard-promo.promo-image .promo-cap { font-size: 12px; color: var(--text-muted); margin-top: 8px; text-align: center; font-style: italic; }
+    /* 弹窗内图片预览 */
+    .promo-prev { max-width: 100%; max-height: 120px; display: block; margin-top: 8px; border-radius: 6px; border: 1px solid var(--border); }
+    /* 全局设置弹窗：分组标签页 */
+    .gs-tabs { display: flex; gap: 4px; margin: 0 0 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .gs-tab { border: 0; background: transparent; padding: 9px 12px; font-size: 12.5px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .gs-tab:hover { color: var(--primary); }
+    .gs-tab.active { color: var(--brand-red); border-bottom-color: var(--brand-red); }
+    .gs-pane { display: none; }
+    .gs-pane.active { display: block; }
     /* 第五十九轮：声明栏加宽（flex-basis 320→400，且只有它参与拉伸）——原文案只能分到约半幅宽，
        排到 5 行、右端锯齿明显；现在社媒栏按内容宽度固定，省下的宽度全给声明栏。 */
     .footer-main { flex: 1 1 400px; min-width: 0; }
@@ -522,8 +552,9 @@
     </div>
     <div class="filters-bar" id="filtersContainer" data-page-node-id="tX5gYL1Cqe2mNPvl7iNvyW"></div>
     <div class="kpi-grid" id="kpiGrid" data-page-node-id="2HU1yvlTXnxMY2daNbILfw"></div>
-    <div class="vis-grid" id="chartGrid" data-page-node-id="wFTGLexlAcuVIAwKkJ9QxO"></div>
-    <div class="dashboard-footer" id="dashboardFooter" data-page-node-id="5fTrQk9nLpZaWm3BvGxEdY"></div>
+        <div class="vis-grid" id="chartGrid" data-page-node-id="wFTGLexlAcuVIAwKkJ9QxO"></div>
+        <div class="dashboard-promo" id="dashboardPromo" data-page-node-id="promoBlk"></div>
+        <div class="dashboard-footer" id="dashboardFooter" data-page-node-id="5fTrQk9nLpZaWm3BvGxEdY"></div>
 </div>
 
 <div class="modal-overlay" id="modelConfigModal" data-page-node-id="EQkYElebmK1D1IoniIetH3">
@@ -539,181 +570,258 @@
 </div>
 
 <div class="modal-overlay" id="globalSettingsModal" data-page-node-id="hLxRIASe7fVOdgUzKXkp4P">
-    <div class="modal-content" style="width: 600px;" data-page-node-id="JbLTqASrE4QwAQu8I7ssTq">
+    <div class="modal-content" style="width: 660px; max-width: 96%;" data-page-node-id="JbLTqASrE4QwAQu8I7ssTq">
         <h3 data-page-node-id="jdStCl0LwYjEtaXflfLauf">仪表盘全局设置</h3>
-        <div class="form-group" data-page-node-id="iActM66ojqZBERt8OwHmKn">
-            <label data-page-node-id="BQ8sgKga2aPhjHcQU6Fwxs">全局时间区间</label>
-            <div class="flex-row" id="globalTimeInputs" data-page-node-id="WVBsxH6fjAvTocU3AgW7B1">
-                <div data-page-node-id="sKHTI6CuGfBaVY6m2v9Jmu"><input type="date" id="gStartDate" data-page-node-id="h1gsXI0qpStMtlFVkgTuLB"></div>
-                <span data-page-node-id="7yaISnOpg1wJltnZDDYYIF">至</span>
-                <div data-page-node-id="M9QLOoWDx8OEUZk8F0m44Z"><input type="date" id="gEndDate" data-page-node-id="eFH1QYRSJNuwGu5BgJdsS7"></div>
+        <div class="gs-tabs" id="gsTabs">
+            <button type="button" class="gs-tab active" id="tab_basic" onclick="switchGlobalTab('basic')">基础与来源</button>
+            <button type="button" class="gs-tab" id="tab_cards" onclick="switchGlobalTab('cards')">卡片与单位</button>
+            <button type="button" class="gs-tab" id="tab_summary" onclick="switchGlobalTab('summary')">综述与页脚</button>
+            <button type="button" class="gs-tab" id="tab_promo" onclick="switchGlobalTab('promo')">推广位</button>
+        </div>
+
+        <!-- 基础与来源 -->
+        <div class="gs-pane active" id="pane_basic">
+            <div class="form-group">
+                <label>全局时间区间</label>
+                <div class="flex-row" id="globalTimeInputs">
+                    <div><input type="date" id="gStartDate"></div>
+                    <span>至</span>
+                    <div><input type="date" id="gEndDate"></div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>仪表板大标题 (支持双语自定义配置)</label>
+                <div class="flex-row">
+                    <input type="text" id="gTitleZh" placeholder="中文标题" style="width: 50%;">
+                    <input type="text" id="gTitleEn" placeholder="英文标题" style="width: 50%;">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>仪表板顶栏标签 (支持双语自定义配置)</label>
+                <div class="flex-row">
+                    <input type="text" id="gMetaZh" placeholder="中文标签" style="width: 50%;">
+                    <input type="text" id="gMetaEn" placeholder="英文标签" style="width: 50%;">
+                </div>
+            </div>
+            <div class="form-group">
+                <label id="globalSourceLabel" style="font-weight:600;">图表来源 (支持双语自定义配置 - 全盘默认)</label>
+                <div id="globalSourceHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">全局默认来源，图表未单独设置时显示此文案；留空则回退系统默认。</div>
+                <div class="flex-row">
+                    <input type="text" id="gSourceZh" placeholder="来源：中国煤炭资源网" style="width: 50%;">
+                    <input type="text" id="gSourceEn" placeholder="Source: Sxcoal" style="width: 50%;">
+                </div>
             </div>
         </div>
-        <div class="form-group" data-page-node-id="ah0kjFzB5tXGr81i4mDWpo">
-            <label data-page-node-id="OPa3K6VEDpM2xmQBSPHP5F">仪表板大标题 (支持双语自定义配置)</label>
-            <div class="flex-row" data-page-node-id="4TdgJEE1ELgRLHQQBApZEn">
-                <input type="text" id="gTitleZh" placeholder="中文标题" style="width: 50%;" data-page-node-id="7lsaLyQfG2D722YlRT2pNr">
-                <input type="text" id="gTitleEn" placeholder="英文标题" style="width: 50%;" data-page-node-id="iJhanBnP6V8opzSHAHmodu">
+
+        <!-- 卡片与单位 -->
+        <div class="gs-pane" id="pane_cards">
+            <div class="form-group">
+                <label id="kpiPeriodCfgTitle" style="font-weight:600;">数据卡片期次文本（双语 - 留空按数据自动生成）</label>
+                <div id="kpiPeriodCfgHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">卡片「时间范围」为最新一期时显示第一行；当年累计、或数据字段为累计列时显示第二行（年初至最新）。打开弹窗时已按当前数据预填默认文案，可直接修改；卡片未单独设置期次文本时跟随这里。</div>
+                <div class="flex-row" style="margin-bottom:6px;">
+                    <input type="text" id="gKpiLatestZh" placeholder="最新一期 · 中文" style="width: 50%;">
+                    <input type="text" id="gKpiLatestEn" placeholder="最新一期 · 英文" style="width: 50%;">
+                </div>
+                <div class="flex-row">
+                    <input type="text" id="gKpiYtdZh" placeholder="当年累计 · 中文" style="width: 50%;">
+                    <input type="text" id="gKpiYtdEn" placeholder="当年累计 · 英文" style="width: 50%;">
+                </div>
+            </div>
+            <div class="form-group">
+                <label id="unitMapTitle" style="font-weight:600;">数值单位双语映射（英文界面自动换算）</label>
+                <div id="unitMapHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;"></div>
+                <div id="unitMapRows"></div>
+                <button type="button" class="btn-build" style="margin-top:8px; font-size:12px; padding:4px 10px;" onclick="addUnitMapRow()" id="unitMapAddBtn">＋ 添加单位</button>
+            </div>
+            <div class="form-group">
+                <label id="globalSlicerLabel">添加全局非数值筛选器 (切片器)</label>
+                <div class="flex-row">
+                    <select id="slicerFieldSel"></select>
+                    <button class="btn-build" onclick="addSlicer()" id="globalSlicerAddBtn">添加</button>
+                </div>
             </div>
         </div>
-        <div class="form-group" data-page-node-id="CgSC7chuy8RD8PZhGwYqLP">
-            <label data-page-node-id="UBxA0s4pFAFuIJ1sB3lmNo">仪表板顶栏标签 (支持双语自定义配置)</label>
-            <div class="flex-row" data-page-node-id="gw1B3Z786w4oxhRoVFMTO5">
-                <input type="text" id="gMetaZh" placeholder="中文标签" style="width: 50%;" data-page-node-id="hL0VpPxAcWhXVWODMf4ShP">
-                <input type="text" id="gMetaEn" placeholder="英文标签" style="width: 50%;" data-page-node-id="77FnijKVPDDIIqx3tISeL3">
+
+        <!-- 综述与页脚 -->
+        <div class="gs-pane" id="pane_summary">
+            <div class="form-group">
+                <label>自定义全盘综述 (支持双语 - 留空则默认自动生成)</label>
+                <textarea id="gSummaryZh" rows="3" placeholder="中文综述文本 (支持HTML标签)..." style="width:100%; margin-bottom:8px; border:1px solid #D1D5DB; border-radius:6px; padding:6px;"></textarea>
+                <textarea id="gSummaryEn" rows="3" placeholder="英文综述文本 (支持HTML标签)..." style="width:100%; border:1px solid #D1D5DB; border-radius:6px; padding:6px;"></textarea>
+            </div>
+            <div class="form-group">
+                <label id="footerCfgTitle" style="font-weight:600;">仪表盘页脚（免责声明 / 联系方式 / 二维码）</label>
+                <div id="footerCfgHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">页脚固定在看板最底部，导出图片与导出 HTML 都会带上；任意字段留空即使用官方默认文案。</div>
+                <label class="footer-switch">
+                    <input type="checkbox" id="gFooterEnabled" style="flex:0 0 auto; width:auto; height:auto; padding:0; margin:0;">
+                    <span id="footerEnabledLabel" style="flex:0 1 auto; min-width:0; text-align:left;">在看板底部显示页脚</span>
+                </label>
+                <div id="footerCfgBody">
+                    <div class="footer-items" id="footerItemList">
+                        <div class="footer-item" data-fkey="titleZh">
+                            <div class="fi-row" onclick="toggleFooterItem(this)">
+                                <span class="fi-name">中文标题</span>
+                                <span class="fi-val"></span>
+                                <span class="fi-pen">▸</span>
+                            </div>
+                            <div class="fi-edit" style="display:none;">
+                                <input type="text" id="gFooterTitleZh" placeholder="中文标题（默认：免责声明）" style="width:100%;">
+                            </div>
+                        </div>
+                        <div class="footer-item" data-fkey="titleEn">
+                            <div class="fi-row" onclick="toggleFooterItem(this)">
+                                <span class="fi-name">英文标题</span>
+                                <span class="fi-val"></span>
+                                <span class="fi-pen">▸</span>
+                            </div>
+                            <div class="fi-edit" style="display:none;">
+                                <input type="text" id="gFooterTitleEn" placeholder="English title (default: Disclaimer)" style="width:100%;">
+                            </div>
+                        </div>
+                        <div class="footer-item" data-fkey="bodyZh">
+                            <div class="fi-row" onclick="toggleFooterItem(this)">
+                                <span class="fi-name">中文正文</span>
+                                <span class="fi-val"></span>
+                                <span class="fi-pen">▸</span>
+                            </div>
+                            <div class="fi-edit" style="display:none;">
+                                <textarea id="gFooterBodyZh" rows="3" placeholder="中文免责声明正文（留空用官方文案）" style="width:100%;"></textarea>
+                            </div>
+                        </div>
+                        <div class="footer-item" data-fkey="bodyEn">
+                            <div class="fi-row" onclick="toggleFooterItem(this)">
+                                <span class="fi-name">英文正文</span>
+                                <span class="fi-val"></span>
+                                <span class="fi-pen">▸</span>
+                            </div>
+                            <div class="fi-edit" style="display:none;">
+                                <textarea id="gFooterBodyEn" rows="3" placeholder="English disclaimer text (leave empty for the official copy)" style="width:100%;"></textarea>
+                            </div>
+                        </div>
+                        <div class="footer-item" data-fkey="contactZh">
+                            <div class="fi-row" onclick="toggleFooterItem(this)">
+                                <span class="fi-name">中文联系方式</span>
+                                <span class="fi-val"></span>
+                                <span class="fi-pen">▸</span>
+                            </div>
+                            <div class="fi-edit" style="display:none;">
+                                <textarea id="gFooterContactZh" rows="2" placeholder="中文联系方式（一行一条，留空用官方文案）" style="width:100%;"></textarea>
+                            </div>
+                        </div>
+                        <div class="footer-item" data-fkey="contactEn">
+                            <div class="fi-row" onclick="toggleFooterItem(this)">
+                                <span class="fi-name">英文联系方式</span>
+                                <span class="fi-val"></span>
+                                <span class="fi-pen">▸</span>
+                            </div>
+                            <div class="fi-edit" style="display:none;">
+                                <textarea id="gFooterContactEn" rows="2" placeholder="English contact info (one line each, leave empty for the official copy)" style="width:100%;"></textarea>
+                            </div>
+                        </div>
+                        <div class="footer-item" data-fkey="qrUrl">
+                            <div class="fi-row" onclick="toggleFooterItem(this)">
+                                <span class="fi-name">二维码图片</span>
+                                <span class="fi-val"></span>
+                                <span class="fi-pen">▸</span>
+                            </div>
+                            <div class="fi-edit" style="display:none;">
+                                <input type="text" id="gFooterQrUrl" placeholder="Sxcoal APP 二维码图片地址（留空用官方二维码）" style="width:100%;">
+                            </div>
+                        </div>
+                        <div class="footer-item" data-fkey="socialsEn">
+                            <div class="fi-row" onclick="toggleFooterItem(this)">
+                                <span class="fi-name">英文社媒</span>
+                                <span class="fi-val"></span>
+                                <span class="fi-pen">▸</span>
+                            </div>
+                            <div class="fi-edit" style="display:none;">
+                                <div id="footerSocialHint" style="font-size:11px; color:#6B7280; margin:2px 0 6px; line-height:1.6;">英文版页脚显示的社媒入口；「平台」决定用哪个 logo，名称留空则只显示 logo（平台选“其他”则只显示文字）。</div>
+                                <div id="footerSocialRowsEn"></div>
+                                <button type="button" class="btn-build" style="font-size:12px; padding:4px 10px; margin-top:2px;" onclick="addFooterSocialRow('En')" id="footerSocialAddBtn">＋ 添加社媒链接</button>
+                            </div>
+                        </div>
+                        <div class="footer-item" data-fkey="socialsZh">
+                            <div class="fi-row" onclick="toggleFooterItem(this)">
+                                <span class="fi-name">中文社媒</span>
+                                <span class="fi-val"></span>
+                                <span class="fi-pen">▸</span>
+                            </div>
+                            <div class="fi-edit" style="display:none;">
+                                <div id="footerSocialHintZh" style="font-size:11px; color:#6B7280; margin:2px 0 6px; line-height:1.6;">中文版页脚显示的社媒入口（默认留空，例如微信公众号、视频号）。</div>
+                                <div id="footerSocialRowsZh"></div>
+                                <button type="button" class="btn-build" style="font-size:12px; padding:4px 10px; margin-top:2px;" onclick="addFooterSocialRow('Zh')" id="footerSocialAddBtnZh">＋ 添加社媒链接</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                        <button type="button" class="btn-build" style="font-size:12px; padding:4px 10px;" onclick="resetFooterConfig()" id="footerResetBtn">恢复默认文案</button>
+                    </div>
+                    <div id="footerCfgNote" style="font-size:11px; color:#9CA3AF; margin-top:6px; line-height:1.6;"></div>
+                </div>
             </div>
         </div>
-        <div class="form-group" style="border-top:1px solid var(--border); padding-top:14px;">
-            <label id="globalSourceLabel" style="font-weight:600;">图表来源 (支持双语自定义配置 - 全盘默认)</label>
-            <div id="globalSourceHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">全局默认来源，图表未单独设置时显示此文案；留空则回退系统默认。</div>
-            <div class="flex-row">
-                <input type="text" id="gSourceZh" placeholder="来源：中国煤炭资源网" style="width: 50%;">
-                <input type="text" id="gSourceEn" placeholder="Source: Sxcoal" style="width: 50%;">
+
+        <!-- 推广位 -->
+        <div class="gs-pane" id="pane_promo">
+            <div class="form-group">
+                <label class="footer-switch">
+                    <input type="checkbox" id="gPromoEnabled" style="flex:0 0 auto; width:auto; height:auto; padding:0; margin:0;">
+                    <span id="promoEnabledLabel" style="flex:0 1 auto; min-width:0; text-align:left;">在看板中显示推广位</span>
+                </label>
             </div>
-        </div>
-        <div class="form-group" data-page-node-id="mieE58XN22uejcE7ZRrPx4">
-            <label data-page-node-id="AwCxo9Z1ixl93ErGI9ZidJ">自定义全盘综述 (支持双语 - 留空则默认自动生成)</label>
-            <textarea id="gSummaryZh" rows="3" placeholder="中文综述文本 (支持HTML标签)..." style="width:100%; margin-bottom:8px; border:1px solid #D1D5DB; border-radius:6px; padding:6px;"></textarea>
-            <textarea id="gSummaryEn" rows="3" placeholder="英文综述文本 (支持HTML标签)..." style="width:100%; border:1px solid #D1D5DB; border-radius:6px; padding:6px;"></textarea>
-        </div>
-        <div class="form-group" style="border-top:1px solid var(--border); padding-top:14px;">
-            <label id="kpiPeriodCfgTitle" style="font-weight:600;">数据卡片期次文本（双语 - 留空按数据自动生成）</label>
-            <div id="kpiPeriodCfgHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">卡片「时间范围」为最新一期时显示第一行；当年累计、或数据字段为累计列时显示第二行（年初至最新）。打开弹窗时已按当前数据预填默认文案，可直接修改；卡片未单独设置期次文本时跟随这里。</div>
-            <div class="flex-row" style="margin-bottom:6px;">
-                <input type="text" id="gKpiLatestZh" placeholder="最新一期 · 中文" style="width: 50%;">
-                <input type="text" id="gKpiLatestEn" placeholder="最新一期 · 英文" style="width: 50%;">
-            </div>
-            <div class="flex-row">
-                <input type="text" id="gKpiYtdZh" placeholder="当年累计 · 中文" style="width: 50%;">
-                <input type="text" id="gKpiYtdEn" placeholder="当年累计 · 英文" style="width: 50%;">
-            </div>
-        </div>
-        <div class="form-group" style="border-top:1px solid var(--border); padding-top:14px;">
-            <label id="unitMapTitle" style="font-weight:600;">数值单位双语映射（英文界面自动换算）</label>
-            <div id="unitMapHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;"></div>
-            <div id="unitMapRows"></div>
-            <button type="button" class="btn-build" style="margin-top:8px; font-size:12px; padding:4px 10px;" onclick="addUnitMapRow()" id="unitMapAddBtn">＋ 添加单位</button>
-        </div>
-        <div class="form-group" style="border-top:1px solid var(--border); padding-top:14px;">
-            <label id="footerCfgTitle" style="font-weight:600;">仪表盘页脚（免责声明 / 联系方式 / 二维码）</label>
-            <div id="footerCfgHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">页脚固定在看板最底部，导出图片与导出 HTML 都会带上；任意字段留空即使用官方默认文案。</div>
-            <!-- 第五十八轮：复选框必须显式 width:auto —— .form-group input{width:100%} 会把它撑满整行，
-                 把后面的文字压成逐字竖排并被裁切（用户截图里的错乱排版） -->
-            <label class="footer-switch">
-                <input type="checkbox" id="gFooterEnabled" style="flex:0 0 auto; width:auto; height:auto; padding:0; margin:0;">
-                <span id="footerEnabledLabel" style="flex:0 1 auto; min-width:0; text-align:left;">在看板底部显示页脚</span>
-            </label>
-            <div id="footerCfgBody">
-                <!-- 第五十七轮：改为「列表默认展示摘要 + 点击某行展开编辑」，与来源/辅助字段等配置项的交互保持一致 -->
-                <div class="footer-items" id="footerItemList">
-                    <div class="footer-item" data-fkey="titleZh">
-                        <div class="fi-row" onclick="toggleFooterItem(this)">
-                            <span class="fi-name">中文标题</span>
-                            <span class="fi-val"></span>
-                            <span class="fi-pen">▸</span>
-                        </div>
-                        <div class="fi-edit" style="display:none;">
-                            <input type="text" id="gFooterTitleZh" placeholder="中文标题（默认：免责声明）" style="width:100%;">
-                        </div>
+            <div id="promoCfgBody" style="margin-top:6px;">
+                <div class="gs-tabs" id="promoLangTabs">
+                    <button type="button" class="gs-tab active" id="ptab_cn" onclick="switchPromoLang('cn')">中文推广</button>
+                    <button type="button" class="gs-tab" id="ptab_en" onclick="switchPromoLang('en')">English promo</button>
+                </div>
+                <div class="gs-pane active" id="promo_cn">
+                    <div style="margin-bottom:8px;">
+                        <label class="footer-switch" style="margin-right:16px;"><input type="radio" name="prType_cn" id="gPromoCnTypeText" checked onchange="promoTypeChanged('cn')"> 文本</label>
+                        <label class="footer-switch"><input type="radio" name="prType_cn" id="gPromoCnTypeImage" onchange="promoTypeChanged('cn')"> 图片</label>
                     </div>
-                    <div class="footer-item" data-fkey="titleEn">
-                        <div class="fi-row" onclick="toggleFooterItem(this)">
-                            <span class="fi-name">英文标题</span>
-                            <span class="fi-val"></span>
-                            <span class="fi-pen">▸</span>
-                        </div>
-                        <div class="fi-edit" style="display:none;">
-                            <input type="text" id="gFooterTitleEn" placeholder="English title (default: Disclaimer)" style="width:100%;">
-                        </div>
+                    <div id="promoCnTextFields">
+                        <div class="flex-row" style="margin-bottom:6px;"><input type="text" id="gPromoCnTitle" placeholder="中文标题" style="width:100%;"></div>
+                        <div class="flex-row" style="margin-bottom:6px;"><input type="text" id="gPromoCnDesc" placeholder="中文描述" style="width:100%;"></div>
+                        <div class="flex-row" style="margin-bottom:6px;"><input type="text" id="gPromoCnBtn" placeholder="中文按钮文字" style="width:100%;"></div>
+                        <div class="flex-row" style="margin-bottom:6px;"><input type="text" id="gPromoCnUrl" placeholder="推广链接 URL（留空用默认：Sxcoal 数据工具）" style="width:100%;"></div>
                     </div>
-                    <div class="footer-item" data-fkey="bodyZh">
-                        <div class="fi-row" onclick="toggleFooterItem(this)">
-                            <span class="fi-name">中文正文</span>
-                            <span class="fi-val"></span>
-                            <span class="fi-pen">▸</span>
+                    <div id="promoCnImageFields" hidden>
+                        <div class="flex-row" style="margin-bottom:6px;">
+                            <input type="text" id="gPromoCnImage" placeholder="图片 URL，或点右侧上传" style="width:70%;" onchange="promoTypeChanged('cn')">
+                            <label class="btn-build" style="font-size:12px; padding:4px 10px;">上传图片<input type="file" accept="image/*" hidden onchange="pickPromoImage(this,'cn')"></label>
                         </div>
-                        <div class="fi-edit" style="display:none;">
-                            <textarea id="gFooterBodyZh" rows="3" placeholder="中文免责声明正文（留空用官方文案）" style="width:100%;"></textarea>
-                        </div>
+                        <img id="promoCnPrev" class="promo-prev" alt="推广图片预览" hidden>
+                        <div class="flex-row" style="margin-bottom:6px;"><input type="text" id="gPromoCnAlt" placeholder="图片替代文字 alt" style="width:100%;"></div>
+                        <div class="flex-row"><input type="text" id="gPromoCnCap" placeholder="说明文字 caption（可选）" style="width:100%;"></div>
                     </div>
-                    <div class="footer-item" data-fkey="bodyEn">
-                        <div class="fi-row" onclick="toggleFooterItem(this)">
-                            <span class="fi-name">英文正文</span>
-                            <span class="fi-val"></span>
-                            <span class="fi-pen">▸</span>
-                        </div>
-                        <div class="fi-edit" style="display:none;">
-                            <textarea id="gFooterBodyEn" rows="3" placeholder="English disclaimer text (leave empty for the official copy)" style="width:100%;"></textarea>
-                        </div>
+                </div>
+                <div class="gs-pane" id="promo_en">
+                    <div style="margin-bottom:8px;">
+                        <label class="footer-switch" style="margin-right:16px;"><input type="radio" name="prType_en" id="gPromoEnTypeText" checked onchange="promoTypeChanged('en')"> 文本</label>
+                        <label class="footer-switch"><input type="radio" name="prType_en" id="gPromoEnTypeImage" onchange="promoTypeChanged('en')"> 图片</label>
                     </div>
-                    <div class="footer-item" data-fkey="contactZh">
-                        <div class="fi-row" onclick="toggleFooterItem(this)">
-                            <span class="fi-name">中文联系方式</span>
-                            <span class="fi-val"></span>
-                            <span class="fi-pen">▸</span>
-                        </div>
-                        <div class="fi-edit" style="display:none;">
-                            <textarea id="gFooterContactZh" rows="2" placeholder="中文联系方式（一行一条，留空用官方文案）" style="width:100%;"></textarea>
-                        </div>
+                    <div id="promoEnTextFields">
+                        <div class="flex-row" style="margin-bottom:6px;"><input type="text" id="gPromoEnTitle" placeholder="English title" style="width:100%;"></div>
+                        <div class="flex-row" style="margin-bottom:6px;"><input type="text" id="gPromoEnDesc" placeholder="English description" style="width:100%;"></div>
+                        <div class="flex-row" style="margin-bottom:6px;"><input type="text" id="gPromoEnBtn" placeholder="English button text" style="width:100%;"></div>
+                        <div class="flex-row" style="margin-bottom:6px;"><input type="text" id="gPromoEnUrl" placeholder="Promo link URL (blank = default Sxcoal data tool)" style="width:100%;"></div>
                     </div>
-                    <div class="footer-item" data-fkey="contactEn">
-                        <div class="fi-row" onclick="toggleFooterItem(this)">
-                            <span class="fi-name">英文联系方式</span>
-                            <span class="fi-val"></span>
-                            <span class="fi-pen">▸</span>
+                    <div id="promoEnImageFields" hidden>
+                        <div class="flex-row" style="margin-bottom:6px;">
+                            <input type="text" id="gPromoEnImage" placeholder="Image URL, or upload on the right" style="width:70%;" onchange="promoTypeChanged('en')">
+                            <label class="btn-build" style="font-size:12px; padding:4px 10px;">上传图片<input type="file" accept="image/*" hidden onchange="pickPromoImage(this,'en')"></label>
                         </div>
-                        <div class="fi-edit" style="display:none;">
-                            <textarea id="gFooterContactEn" rows="2" placeholder="English contact info (one line each, leave empty for the official copy)" style="width:100%;"></textarea>
-                        </div>
-                    </div>
-                    <div class="footer-item" data-fkey="qrUrl">
-                        <div class="fi-row" onclick="toggleFooterItem(this)">
-                            <span class="fi-name">二维码图片</span>
-                            <span class="fi-val"></span>
-                            <span class="fi-pen">▸</span>
-                        </div>
-                        <div class="fi-edit" style="display:none;">
-                            <input type="text" id="gFooterQrUrl" placeholder="Sxcoal APP 二维码图片地址（留空用官方二维码）" style="width:100%;">
-                        </div>
-                    </div>
-                    <div class="footer-item" data-fkey="socialsEn">
-                        <div class="fi-row" onclick="toggleFooterItem(this)">
-                            <span class="fi-name">英文社媒</span>
-                            <span class="fi-val"></span>
-                            <span class="fi-pen">▸</span>
-                        </div>
-                        <div class="fi-edit" style="display:none;">
-                            <div id="footerSocialHint" style="font-size:11px; color:#6B7280; margin:2px 0 6px; line-height:1.6;">英文版页脚显示的社媒入口；「平台」决定用哪个 logo，名称留空则只显示 logo（平台选“其他”则只显示文字）。</div>
-                            <div id="footerSocialRowsEn"></div>
-                            <button type="button" class="btn-build" style="font-size:12px; padding:4px 10px; margin-top:2px;" onclick="addFooterSocialRow('En')" id="footerSocialAddBtn">＋ 添加社媒链接</button>
-                        </div>
-                    </div>
-                    <div class="footer-item" data-fkey="socialsZh">
-                        <div class="fi-row" onclick="toggleFooterItem(this)">
-                            <span class="fi-name">中文社媒</span>
-                            <span class="fi-val"></span>
-                            <span class="fi-pen">▸</span>
-                        </div>
-                        <div class="fi-edit" style="display:none;">
-                            <div id="footerSocialHintZh" style="font-size:11px; color:#6B7280; margin:2px 0 6px; line-height:1.6;">中文版页脚显示的社媒入口（默认留空，例如微信公众号、视频号）。</div>
-                            <div id="footerSocialRowsZh"></div>
-                            <button type="button" class="btn-build" style="font-size:12px; padding:4px 10px; margin-top:2px;" onclick="addFooterSocialRow('Zh')" id="footerSocialAddBtnZh">＋ 添加社媒链接</button>
-                        </div>
+                        <img id="promoEnPrev" class="promo-prev" alt="promo image preview" hidden>
+                        <div class="flex-row" style="margin-bottom:6px;"><input type="text" id="gPromoEnAlt" placeholder="Image alt text" style="width:100%;"></div>
+                        <div class="flex-row"><input type="text" id="gPromoEnCap" placeholder="Caption (optional)" style="width:100%;"></div>
                     </div>
                 </div>
                 <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
-                    <button type="button" class="btn-build" style="font-size:12px; padding:4px 10px;" onclick="resetFooterConfig()" id="footerResetBtn">恢复默认文案</button>
+                    <button type="button" class="btn-build" style="font-size:12px; padding:4px 10px;" onclick="resetPromoConfig()" id="promoResetBtn">恢复默认文案</button>
                 </div>
-                <div id="footerCfgNote" style="font-size:11px; color:#9CA3AF; margin-top:6px; line-height:1.6;"></div>
             </div>
         </div>
-        <div class="form-group" style="border-top:1px solid var(--border); padding-top:14px;" data-page-node-id="1kp6hcQXE4iG5yQAr6GD04">
-            <label id="globalSlicerLabel" data-page-node-id="bxjcGEIlQrj2diPLODuTlp">添加全局非数值筛选器 (切片器)</label>
-            <div class="flex-row" data-page-node-id="HH0kqfhg2KmOjVcJsMT5FA">
-                <select id="slicerFieldSel" data-page-node-id="DeFfAO8jiwDtkeQ2QFQTXD"></select>
-                <button class="btn-build" onclick="addSlicer()" id="globalSlicerAddBtn" data-page-node-id="7H4OrCrdAHCwzP3cDqP9AM">添加</button>
-            </div>
-        </div>
+
         <div class="modal-actions" data-page-node-id="3ARIRHnExOD0gNCK3c7G50">
             <button class="btn-build danger" onclick="resetFilters()" id="globalResetBtn" data-page-node-id="2gZn96GAfD3LeMzPpVgigi">重置全局筛选</button>
             <button class="btn-build" onclick="closeModal('globalSettingsModal')" data-page-node-id="FmKbWweCBtwu6hqQZ0CD32">关闭</button>
@@ -1101,6 +1209,12 @@
         dateRange: { active: false, start: '', end: '' },
         // 第六十一轮：数据卡片期次文本全盘默认（双语）。空串 = 跟随数据自动生成（最新一期→最新期次颗粒度；当年累计→年初至最新）
         kpiPeriodText: { latestZh: '', latestEn: '', ytdZh: '', ytdEn: '' },
+        // 第六十四轮：图表下方、免责声明上方的推广位（中英文分开；文本或图片；空串=回退默认 Sxcoal 数据工具）
+        promo: {
+            enabled: true,
+            cn: { type: 'text', title: '', desc: '', btn: '', url: '', image: '', alt: '', caption: '' },
+            en: { type: 'text', title: '', desc: '', btn: '', url: '', image: '', alt: '', caption: '' }
+        },
         slicers: [], kpis: [], charts: [], headerMap: {}, dateColumn: null
     };
 
@@ -2561,6 +2675,7 @@
             };
         } catch (e) { console.warn('期次文本保存失败', e); }
         try { saveFooterConfigFromUI(); } catch (e) { console.warn('页脚配置保存失败', e); }
+        try { savePromoConfigFromUI(); } catch (e) { console.warn('推广位配置保存失败', e); }
         closeModal('globalSettingsModal'); switchLanguage(window.currentLang); 
     }
     
@@ -3492,6 +3607,141 @@
         return out;
     }
 
+    // ---- 第六十四轮：图表下方 / 免责声明上方的推广位（中英文分开；文本或图片；空串回退默认） ----
+    const PROMO_DEFAULT_URL = 'https://www.sxcoal.com/site/data-tool?type=2';
+    const PROMO_DEFAULT = {
+        cn: { type: 'text', title: '数据驱动决策，从这里开始', desc: '需要更完整、更细颗粒度的煤炭与能源行业数据？中国煤炭资源网数据库覆盖国内和国际产量、供需、进出口、库存、销量、运量、价格等全链条指标，支持按需筛选与 API 对接。', btn: '前往数据工具', url: '', image: '', alt: '', caption: '' },
+        en: { type: 'text', title: 'Data-Driven Decisions Start Here', desc: 'Need more complete, granular coal & energy data? Sxcoal data terminal covers the full chain — production, supply & demand, imports & exports, inventories, transport, sales, prices and freight — with on-demand filtering and API access.', btn: 'Explore Sxcoal Data Tools', url: '', image: '', alt: '', caption: '' }
+    };
+    const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+    // 旧版扁平结构（titleZh/titleEn/...）迁移为 cn/en 结构，保证历史模板兼容
+    function normalizePromo() {
+        let p = dashboardConfig.promo;
+        if (!p || typeof p !== 'object' || Array.isArray(p)) { p = { enabled: true }; dashboardConfig.promo = p; }
+        if (typeof p.enabled === 'undefined') p.enabled = true;
+        if (!p.cn || !p.en) {
+            const o = p;
+            p.cn = { type: 'text', title: o.titleZh || '', desc: o.descZh || '', btn: o.btnZh || '', url: o.url || '', image: '', alt: '', caption: '' };
+            p.en = { type: 'text', title: o.titleEn || '', desc: o.descEn || '', btn: o.btnEn || '', url: o.url || '', image: '', alt: '', caption: '' };
+            ['titleZh', 'titleEn', 'descZh', 'descEn', 'btnZh', 'btnEn'].forEach(k => { delete o[k]; });
+        }
+        return p;
+    }
+    function getPromoConfig() { return normalizePromo(); }
+
+    // 推广位渲染：与页脚一样，语言切换 / 数据刷新 / 导出都会重跑（挂在 renderCharts 末尾）
+    function renderDashboardPromo() {
+        let host = document.getElementById('dashboardPromo');
+        if (!host) return;
+        let p = normalizePromo();
+        if (p.enabled === false) { host.className = 'dashboard-promo'; host.innerHTML = ''; return; }
+        let isEn = window.currentLang === 'en';
+        let lang = isEn ? 'en' : 'cn';
+        let def = PROMO_DEFAULT[lang];
+        let bl = (p[lang] && (p[lang].title || p[lang].desc || p[lang].image || p[lang].btn || p[lang].url)) ? p[lang] : def;
+        let url = (bl.url && bl.url.trim()) ? bl.url.trim() : PROMO_DEFAULT_URL;
+        if (bl.type === 'image' && bl.image) {
+            host.className = 'dashboard-promo promo-image';
+            let inner = '<img class="promo-img" src="' + escapeHtml(bl.image) + '" alt="' + escapeHtml(bl.alt || '') + '">';
+            if (bl.caption) inner += '<div class="promo-cap">' + escapeHtml(bl.caption) + '</div>';
+            host.innerHTML = url ? ('<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="promo-img-link">' + inner + '</a>') : inner;
+            return;
+        }
+        let title = bl.title || def.title, desc = bl.desc || def.desc, btn = bl.btn || def.btn;
+        host.className = 'dashboard-promo';
+        host.innerHTML = '<div class="promo-text"><div class="promo-title">' + escapeHtml(title) + '</div><p class="promo-desc">' + escapeHtml(desc) + '</p></div>' +
+            (url ? '<div class="promo-cta"><a class="promo-btn" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(btn) + '</a></div>' : '');
+    }
+
+    function setPromoVal(id, v) { let el = document.getElementById(id); if (el) el.value = v || ''; }
+    function getPromoVal(id) { let el = document.getElementById(id); return el ? el.value.trim() : ''; }
+    function fillPromoConfigUI() {
+        let p = normalizePromo();
+        let chk = document.getElementById('gPromoEnabled');
+        if (chk) {
+            chk.checked = p.enabled !== false;
+            let bodyEl = document.getElementById('promoCfgBody');
+            if (bodyEl) bodyEl.style.display = chk.checked ? '' : 'none';
+            chk.onchange = () => { let b = document.getElementById('promoCfgBody'); if (b) b.style.display = chk.checked ? '' : 'none'; };
+        }
+        ['cn', 'en'].forEach(lang => {
+            let C = cap(lang), bl = p[lang] || {}, def = PROMO_DEFAULT[lang];
+            setPromoVal('gPromo' + C + 'Title', bl.title || def.title);
+            setPromoVal('gPromo' + C + 'Desc', bl.desc || def.desc);
+            setPromoVal('gPromo' + C + 'Btn', bl.btn || def.btn);
+            setPromoVal('gPromo' + C + 'Url', bl.url || '');
+            setPromoVal('gPromo' + C + 'Image', bl.image || '');
+            setPromoVal('gPromo' + C + 'Alt', bl.alt || '');
+            setPromoVal('gPromo' + C + 'Cap', bl.caption || '');
+            let isImg = bl.type === 'image';
+            let tEl = document.getElementById('gPromo' + C + 'TypeText'), iEl = document.getElementById('gPromo' + C + 'TypeImage');
+            if (tEl) tEl.checked = !isImg;
+            if (iEl) iEl.checked = isImg;
+            let prev = document.getElementById('promo' + C + 'Prev');
+            if (prev) { if (bl.image) { prev.src = bl.image; prev.hidden = false; } else { prev.hidden = true; } }
+            promoTypeChanged(lang);
+        });
+    }
+    function savePromoConfigFromUI() {
+        let p = normalizePromo();
+        let chk = document.getElementById('gPromoEnabled');
+        if (chk) p.enabled = !!chk.checked;
+        ['cn', 'en'].forEach(lang => {
+            let C = cap(lang);
+            let bl = p[lang] || (p[lang] = { type: 'text', title: '', desc: '', btn: '', url: '', image: '', alt: '', caption: '' });
+            bl.type = document.getElementById('gPromo' + C + 'TypeImage').checked ? 'image' : 'text';
+            bl.title = getPromoVal('gPromo' + C + 'Title');
+            bl.desc = getPromoVal('gPromo' + C + 'Desc');
+            bl.btn = getPromoVal('gPromo' + C + 'Btn');
+            let u = getPromoVal('gPromo' + C + 'Url');
+            bl.url = (u === '' || u === PROMO_DEFAULT_URL) ? '' : u;
+            bl.image = getPromoVal('gPromo' + C + 'Image');
+            bl.alt = getPromoVal('gPromo' + C + 'Alt');
+            bl.caption = getPromoVal('gPromo' + C + 'Cap');
+        });
+    }
+    function resetPromoConfig() {
+        let p = normalizePromo();
+        p.cn = JSON.parse(JSON.stringify(PROMO_DEFAULT.cn));
+        p.en = JSON.parse(JSON.stringify(PROMO_DEFAULT.en));
+        fillPromoConfigUI();
+    }
+    function promoTypeChanged(lang) {
+        let C = cap(lang);
+        let isImg = document.getElementById('gPromo' + C + 'TypeImage').checked;
+        let tf = document.getElementById('promo' + C + 'TextFields'), imf = document.getElementById('promo' + C + 'ImageFields');
+        if (tf) tf.hidden = isImg;
+        if (imf) imf.hidden = !isImg;
+    }
+    function pickPromoImage(input, lang) {
+        let f = input.files && input.files[0];
+        if (!f) return;
+        let r = new FileReader();
+        r.onload = function (e) {
+            let C = cap(lang);
+            let el = document.getElementById('gPromo' + C + 'Image');
+            if (el) el.value = e.target.result;
+            let prev = document.getElementById('promo' + C + 'Prev');
+            if (prev) { prev.src = e.target.result; prev.hidden = false; }
+        };
+        r.readAsDataURL(f);
+    }
+    function switchPromoLang(lang) {
+        ['cn', 'en'].forEach(k => {
+            let pane = document.getElementById('promo_' + k), tab = document.getElementById('ptab_' + k);
+            if (pane) pane.classList.toggle('active', k === lang);
+            if (tab) tab.classList.toggle('active', k === lang);
+        });
+    }
+    function switchGlobalTab(id) {
+        ['basic', 'cards', 'summary', 'promo'].forEach(k => {
+            let pane = document.getElementById('pane_' + k), tab = document.getElementById('tab_' + k);
+            if (pane) pane.classList.toggle('active', k === id);
+            if (tab) tab.classList.toggle('active', k === id);
+        });
+    }
+
     // 页脚渲染：语言切换 / 数据刷新 / 导出都会重跑（挂在 renderCharts 末尾）
     function renderDashboardFooter() {
         let host = document.getElementById('dashboardFooter');
@@ -3753,6 +4003,7 @@
         dashboardConfig.charts.forEach(cConfig => { parts.push(buildChartWrapperHtml(cConfig)); });
         container.innerHTML = parts.join('');
         try { renderDashboardFooter(); } catch (e) { console.warn('页脚渲染失败', e); }
+        try { renderDashboardPromo(); } catch (e) { console.warn('推广位渲染失败', e); }
 
         setTimeout(() => {
             dashboardConfig.charts.forEach(c => {
@@ -7552,6 +7803,10 @@ function applyChartAnalyticsI18N() {
         try { fillKpiPeriodConfigUI(); } catch (e) {}
         applyGlobalSettingsI18N();
         fillFooterConfigUI();
+        normalizePromo();
+        fillPromoConfigUI();
+        switchGlobalTab('basic');
+        switchPromoLang('cn');
         openModal('globalSettingsModal');
     }
 
@@ -7559,10 +7814,16 @@ function applyChartAnalyticsI18N() {
     function applyGlobalSettingsI18N() {
         let t = uiText[window.currentLang] || uiText.zh;
         let setText = (id, val) => { let el = document.getElementById(id); if (el) el.textContent = val; };
+        let _isEn = window.currentLang === 'en';
         setText('globalSlicerLabel', t.globalSlicerLabel);
         setText('globalSlicerAddBtn', t.addBtn);
         setText('globalResetBtn', t.resetGlobal);
         setText('globalApplyBtn', t.applyRefresh);
+        // 第六十四轮：分组标签页文案
+        setText('tab_basic', t.tabBasic || (_isEn ? 'Basic & Source' : '基础与来源'));
+        setText('tab_cards', t.tabCards || (_isEn ? 'Cards & Units' : '卡片与单位'));
+        setText('tab_summary', t.tabSummary || (_isEn ? 'Summary & Footer' : '综述与页脚'));
+        setText('tab_promo', t.tabPromo || (_isEn ? 'Promo block' : '推广位'));
         // 第四十四轮：单位映射区文案
         setText('unitMapTitle', t.unitMapTitle);
         setText('unitMapHint', t.unitMapHint);
@@ -7571,7 +7832,6 @@ function applyChartAnalyticsI18N() {
         setText('globalSourceLabel', t.globalSourceLabel);
         setText('globalSourceHint', t.globalSourceHint);
         // 第五十六轮：页脚配置区文案（uiText 未定义时回退中文默认）
-        let _isEn = window.currentLang === 'en';
         // 第六十一轮：数据卡片期次文本区文案
         setText('kpiPeriodCfgTitle', t.kpiPeriodCfgTitle || (_isEn ? 'KPI card period text (bilingual - auto-generated when empty)' : '数据卡片期次文本（双语 - 留空按数据自动生成）'));
         setText('kpiPeriodCfgHint', t.kpiPeriodCfgHint || (_isEn ? 'Row 1 shows when a card is locked to the latest period; row 2 shows for YTD cumulative (or a cumulative field with latest period). Pre-filled with the auto text from current data; cards without their own period text follow these.' : '卡片「时间范围」为最新一期时显示第一行；当年累计、或数据字段为累计列时显示第二行（年初至最新）。打开弹窗时已按当前数据预填默认文案，可直接修改；卡片未单独设置期次文本时跟随这里。'));
@@ -7583,6 +7843,8 @@ function applyChartAnalyticsI18N() {
         setText('footerSocialAddBtn', t.footerSocialAddBtn || (_isEn ? '＋ Add social link' : '＋ 添加社媒链接'));
         setText('footerSocialAddBtnZh', t.footerSocialAddBtnZh || (_isEn ? '＋ Add social link' : '＋ 添加社媒链接'));
         setText('footerResetBtn', t.footerResetBtn || (_isEn ? 'Restore default copy' : '恢复默认文案'));
+        setText('promoEnabledLabel', t.promoEnabledLabel || (_isEn ? 'Show the promo block' : '在看板中显示推广位'));
+        setText('promoResetBtn', t.promoResetBtn || (_isEn ? 'Restore default copy' : '恢复默认文案'));
     }
 
     // ===== 数值单位双语映射（第四十四轮）=====
