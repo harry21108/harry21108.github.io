@@ -1096,7 +1096,7 @@
 
     let dashboardConfig = {
         dashTitleZh: '煤炭与工业数据动态分析', dashTitleEn: 'Coal & Industrial Market Analytics',
-        dashMetaZh: '中国煤炭资源网数据看板', dashMetaEn: 'Sxcoal Intelligence Dashboard',
+        dashMetaZh: '中国煤炭资源网数据看板', dashMetaEn: 'Sxcoal Data Dashboard',
         dashSummaryZh: '', dashSummaryEn: '',
         dateRange: { active: false, start: '', end: '' },
         // 第六十一轮：数据卡片期次文本全盘默认（双语）。空串 = 跟随数据自动生成（最新一期→最新期次颗粒度；当年累计→年初至最新）
@@ -1990,7 +1990,7 @@
         let langBtn = document.getElementById(`btn-lang-${lang}`);
         if (langBtn) langBtn.classList.add('active');
 
-        let tagVal = lang === 'en' ? (dashboardConfig.dashMetaEn || 'Sxcoal Intelligence Dashboard') : (dashboardConfig.dashMetaZh || '中国煤炭资源网 / Sxcoal 市场看板');
+        let tagVal = lang === 'en' ? (dashboardConfig.dashMetaEn || 'Sxcoal Data Dashboard') : (dashboardConfig.dashMetaZh || '中国煤炭资源网 / Sxcoal 市场看板');
         let titleVal = lang === 'en' ? (dashboardConfig.dashTitleEn || 'Coal & Industrial Market Analytics') : (dashboardConfig.dashTitleZh || '煤炭与工业数据动态分析中心');
         let metaEl = document.getElementById('meta-tag'); if (metaEl) metaEl.textContent = tagVal;
         let titleEl = document.getElementById('main-title'); if (titleEl) titleEl.textContent = titleVal;
