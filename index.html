@@ -1,14 +1,16 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN" data-page-node-id="CAnHMoegbiEEM9KHpaQCft">
 <head data-page-node-id="gMySsmqlzltaH0qzJHXbaS">
 <meta charset="UTF-8" data-page-node-id="4sOY4JVbN9LizEXfG2eQxy">
 <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="jBD7J9MRA8drBCVWdrLGPc">
-<title>行业数据与市场分析仪表盘</title>
+<title>Sxcoal 行业数据与市场分析仪表盘</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" data-page-node-id="2A7qcGwgki8SxSunGTavya">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin data-page-node-id="0fyWB8JYGLluPQwJzj7tQX">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" data-page-node-id="xwzJMptj1u0WOjJ5wvLN1r">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <style>
     :root {
         --primary: #111827;
@@ -33,15 +35,6 @@
         border: 1px solid var(--border); padding: 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);
         position: relative;
     }
-    .brand-settings { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
-    .brand-settings h2 { margin: 0 0 6px; font-size: 17px; color: var(--primary); }
-    .brand-settings p { margin: 0 0 14px; font-size: 13px; color: var(--text-muted); }
-    .brand-settings-fields { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
-    .brand-settings-field { display: flex; flex-direction: column; gap: 5px; min-width: 220px; flex: 1; }
-    .brand-settings-field label { font-size: 12px; font-weight: 600; color: #374151; }
-    .brand-settings-field input { width: 100%; padding: 8px 10px; border: 1px solid #D1D5DB; border-radius: 5px; font-size: 13px; }
-    .brand-settings-preview { width: 42px; height: 42px; object-fit: contain; border: 1px solid var(--border); border-radius: 5px; display: none; background: #FFF; }
-    .brand-settings-status { font-size: 12px; color: #B45309; margin-top: 10px; }
     .drop-zone {
         border: 2px dashed #D1D5DB; border-radius: 6px; padding: 24px; text-align: center;
         background-color: #F9FAFB; cursor: pointer; transition: all 0.2s ease;
@@ -70,7 +63,7 @@
         margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);
     }
     .file-status { font-size: 13px; color: #0369A1; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-    .action-controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .action-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
     .lang-switcher { display: flex; background: #F3F4F6; border-radius: 6px; padding: 4px; border: 1px solid var(--border); }
     .lang-btn {
@@ -84,6 +77,17 @@
         border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s;
     }
     .export-btn:hover { background: #374151; }
+
+    .icon-action {
+        display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+        width: 36px; height: 36px; padding: 0; border: 1px solid var(--border);
+        background: #FFFFFF; color: var(--primary); border-radius: 6px; cursor: pointer;
+        transition: all 0.2s; box-sizing: border-box;
+    }
+    .icon-action:hover { background: #F3F4F6; border-color: #B23E19; color: #B23E19; }
+    .icon-action svg { width: 18px; height: 18px; display: block; }
+    .icon-action .lang-code { font-size: 11px; font-weight: 700; line-height: 1; }
+    #btn-lang { width: auto; padding: 0 10px; }
 
     .builder-toolbar {
         max-width: 1140px; margin: 0 auto 24px auto; display: none; gap: 10px;
@@ -116,7 +120,7 @@
         margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 16px;
     }
     .brand-logo { height: 32px; width: auto; display: block; }
-    .meta-tag { font-size: 13px; color: var(--text-muted); font-weight: 600; background: #F3F4F6; padding: 4px 10px; border-radius: 4px; }
+    .meta-tag { font-size: 15px; color: var(--text-muted); font-weight: 600; background: transparent; padding: 4px 0; border-radius: 4px; font-style: italic; }
     .main-title { font-size: 24px; color: #111111; margin: 0 0 10px 0; font-weight: 700; line-height: 1.3; }
     
     .executive-summary-box {
@@ -164,6 +168,71 @@
     .chart-title { font-size: 14.5px; font-weight: 700; color: var(--primary); border-left: 3px solid var(--brand-red); padding-left: 8px; line-height: 1.35; }
     .chart-container { width: 100%; height: 340px; min-width: 0; padding-top: 1px; box-sizing: border-box; }
     .chart-source { font-size: 11px; color: #9CA3AF; text-align: left; margin-top: 2px; padding: 0 4px 0 4px; line-height: 1.4; }
+    /* 第五十六轮：仪表盘页脚（免责声明 + 联系方式 + APP 二维码 + 英文社媒链接）。
+       默认文案在 dashboardConfig.footer，可在【全局设置】中自定义或关闭；
+       页脚位于 #dashboard 内部，因此整屏截图与导出页都会自动带上。 */
+    .dashboard-footer {
+        margin: 26px 40px 4px; padding-top: 16px; border-top: 1px solid var(--border);
+        display: flex; align-items: flex-start; justify-content: space-between; gap: 22px 34px; flex-wrap: wrap;
+    }
+    .dashboard-footer:empty { display: none; }
+    /* 第五十九轮：声明栏加宽（flex-basis 320→400，且只有它参与拉伸）——原文案只能分到约半幅宽，
+       排到 5 行、右端锯齿明显；现在社媒栏按内容宽度固定，省下的宽度全给声明栏。 */
+    .footer-main { flex: 1 1 400px; min-width: 0; }
+    .footer-title {
+        font-size: 12px; font-weight: 700; color: var(--primary);
+        border-left: 3px solid var(--brand-red); padding-left: 8px; line-height: 1.35; margin: 0 0 8px;
+    }
+    .footer-body { font-size: 11px; line-height: 1.75; color: #6B7280; margin: 0 0 8px; }
+    .footer-contact { font-size: 11px; line-height: 1.75; color: #6B7280; margin: 0; }
+    /* 第五十九轮：声明/联系方式里的网址与邮箱自动识别为超链接（渲染时 linkify，无需人工配置） */
+    .footer-link { color: var(--brand-red); text-decoration: none; border-bottom: 1px solid rgba(178,62,25,0.35); }
+    .footer-link:hover { border-bottom-color: var(--brand-red); }
+    /* 第五十八轮：社媒独立成「中间栏」，与左侧文本、右侧二维码并列，垂直居中于页脚空白区。
+       平台可重复（WhatsApp Channel / Community、Telegram Channel / Group），因此排成
+       「两列 = 品牌 logo + 平台名」的网格：左侧文本、右侧二维码各占一边，中间这块不再空着。
+       图标为品牌色圆角底 + 内联 SVG（无外链、可离线、导出页同样可用）。 */
+    /* 第五十九轮：社媒栏不再参与拉伸（flex:0 1 auto）+ 顶端对齐，
+       与左侧「免责声明」标题、右侧二维码落在同一条顶线上，不再在中间悬空。 */
+    .footer-social-col {
+        flex: 0 1 auto; min-width: 0; align-self: flex-start;
+        display: flex; align-items: flex-start; justify-content: center;
+    }
+    .footer-social-col:empty { display: none; }
+    /* 行距 7→11：三行 logo 叠得太紧，且 a{line-height:1} 会让 11px 文字被行盒裁掉上下缘
+       （用户反馈"文字没有显示全"）——行距放开、行高回到 1.4 即可完整显示。 */
+    .footer-social {
+        display: grid; grid-template-columns: repeat(2, minmax(0, auto));
+        gap: 11px 22px; width: max-content; max-width: 100%; justify-items: start;
+    }
+    .footer-social a { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #6B7280; text-decoration: none; line-height: 1.4; min-width: 0; max-width: 100%; }
+    .footer-social a:hover { color: var(--brand-red); }
+    .footer-social a:hover .fs-name { text-decoration: underline; }
+    .fs-ico { width: 22px; height: 22px; border-radius: 5px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; }
+    .fs-ico svg { width: 13px; height: 13px; display: block; }
+    .fs-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* 全局设置里的页脚配置：默认一行摘要，点击才展开编辑（与来源/辅助字段等配置项一致） */
+    .footer-switch {
+        display: flex; align-items: center; justify-content: flex-start; gap: 6px;
+        font-size: 12px; font-weight: 600; color: var(--primary);
+        margin: 0 0 8px; text-align: left; cursor: pointer; line-height: 1.4;
+    }
+    .footer-items { display: flex; flex-direction: column; gap: 4px; }
+    .footer-item { border: 1px solid #E5E7EB; border-radius: 6px; background: #FFFFFF; }
+    .footer-item.open { border-color: var(--brand-red); }
+    .fi-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; border-radius: 5px; }
+    .fi-row:hover { background: #F9FAFB; }
+    .fi-name { flex: 0 0 92px; font-size: 12px; font-weight: 600; color: var(--primary); }
+    .fi-val { flex: 1 1 auto; min-width: 0; font-size: 12px; color: #6B7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fi-pen { flex: 0 0 auto; font-size: 11px; color: #9CA3AF; transition: transform .15s ease; }
+    .footer-item.open .fi-pen { color: var(--brand-red); transform: rotate(90deg); }
+    .fi-edit { padding: 0 10px 10px; }
+    .footer-qr { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; }
+    .footer-qr img {
+        width: 92px; height: 92px; display: block; background: #FFF;
+        border: 1px solid var(--border); border-radius: 6px; padding: 3px; box-sizing: border-box;
+    }
+    .footer-qr-label { font-size: 10.5px; color: #9CA3AF; margin-top: 5px; text-align: center; line-height: 1.35; max-width: 112px; }
     /* vis-wrapper 控制按钮：hover 时才显示（与之前一致），避免遮住图表内容 */
     .vis-wrapper .ctrls { position: absolute; top: 8px; right: 8px; display: none; gap: 4px; z-index: 2; }
     .vis-wrapper:hover .ctrls { display: flex; }
@@ -351,6 +420,13 @@
     }
     #chartOverlayModal button.icon-btn svg { width: 14px; height: 14px; display: block; }
 
+    /* 第五十九轮：中等宽度（平板/小窗）三栏挤不下时，flex 会把最后的二维码甩到第二行，
+       左侧只剩声明+社媒、右半边留白，看起来像"漏了一格"。
+       改为：有社媒时声明独占一行，第二行放「社媒 + 二维码」，中英两种状态都稳定；
+       没社媒（中文默认）时不改，仍是「声明 + 二维码」并排。 */
+    @media (min-width: 769px) and (max-width: 1024px) {
+        .dashboard-footer.has-social .footer-main { flex: 1 1 100%; margin-bottom: 4px; }
+    }
     @media (max-width: 768px) {
         body { padding: 12px; }
         .upload-container { padding: 16px; }
@@ -359,6 +435,13 @@
         .kpi-grid { margin: 0 16px 16px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
         .vis-grid { margin: 0 16px; grid-template-columns: 1fr; gap: 16px; }
         .chart-container { height: 280px; }
+        .dashboard-footer { margin: 20px 16px 4px; padding-top: 12px; gap: 14px; }
+        .footer-main { flex: 1 1 180px; }
+        /* 窄屏下社媒栏独占一行、靠左排，避免被挤成竖条 */
+        .footer-social-col { flex: 1 1 100%; align-self: flex-start; justify-content: flex-start; }
+        /* 窄屏不铺满整行：两列紧贴靠左，避免两列被拉开显得松散 */
+        .footer-social { gap: 10px 16px; width: max-content; }
+        .footer-qr img { width: 76px; height: 76px; }
         .modal-content { width: 95%; padding: 16px; }
         #chartOverlayContent { width: 100vw !important; height: 100vh !important; max-width: none !important; max-height: none !important; border-radius: 0 !important; }
         .landscape #chartOverlayContainer { height: calc(100vh - 60px) !important; }
@@ -390,23 +473,6 @@
 <body data-page-node-id="d8QEqBsbb1h9D3kEycqRDO">
 
 <div class="upload-container" id="upload-container" data-page-node-id="BM7wpNeumLfF9TVVDRz0FW">
-    <div class="brand-settings" id="brandSettings">
-        <h2>设置公司品牌信息</h2>
-        <p>请输入您有权使用的公司名称和公司图标，后续仪表盘及导出内容将使用这些信息。</p>
-        <div class="brand-settings-fields">
-            <div class="brand-settings-field">
-                <label for="companyNameInput">公司名称</label>
-                <input type="text" id="companyNameInput" placeholder="请输入公司名称" autocomplete="organization">
-            </div>
-            <div class="brand-settings-field">
-                <label for="companyLogoInput">公司图标</label>
-                <input type="file" id="companyLogoInput" accept="image/*">
-            </div>
-            <img id="companyLogoPreview" class="brand-settings-preview" alt="公司图标预览">
-            <button class="btn-build primary" type="button" onclick="applyBrandIdentity()">应用品牌信息</button>
-        </div>
-        <div class="brand-settings-status" id="brandSettingsStatus">公司名称和公司图标均为可选项。</div>
-    </div>
     <div class="loading-overlay" id="loadingOverlay" data-page-node-id="UNoU7LbZs4HpwNinqDmqBw">
         <div class="spinner" data-page-node-id="18O8muh1Sr7qmJH4wWrVu7"></div>
         <div style="font-size: 13px; color: #374151; font-weight: 600;" data-page-node-id="WQN0pyBYCCw1ucnMQ3HoU6">正在解析数据与模型，请稍候...</div>
@@ -423,11 +489,10 @@
     <div class="action-zone" id="actionZone" style="display: none;" data-page-node-id="FNlvKOTLQgni4J1AjEL4jF">
         <span class="file-status" id="fileStatus" data-page-node-id="5HjDDeEnjrmUE8mCzonVjE">等待上传数据...</span>
         <div class="action-controls" data-page-node-id="NWeDfyGuTCPBVX9ISQCzOA">
-            <div class="lang-switcher" data-page-node-id="z5kaOlRVd70sbXMYWVQJvu">
-                <button id="btn-lang-zh" class="lang-btn active" onclick="switchLanguage('zh')" data-page-node-id="ebIfIXBeb7BkFNyYzti8pY">中文</button>
-                <button id="btn-lang-en" class="lang-btn" onclick="switchLanguage('en')" data-page-node-id="PrvJb8nxT2kvKGWM6Cb74c">EN</button>
-            </div>
-            <button class="export-btn" onclick="exportStaticHTML()" data-page-node-id="LAiL1GSOewFYBNJSiaOCdn">导出交互式 HTML</button>
+            <button class="icon-action" id="btn-lang" title="切换语言 / Switch language" onclick="toggleLanguage()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span class="lang-code" id="langCode">中</span></button>
+            <button class="icon-action" id="btn-export-html" title="导出交互式 HTML / Export interactive HTML" onclick="exportStaticHTML()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg></button>
+            <button class="icon-action" id="btn-copy-dash" title="复制仪表盘图片 / Copy dashboard image" onclick="copyDashboardImage()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg></button>
+            <button class="icon-action" id="btn-download-dash" title="下载仪表盘图片 / Download dashboard image" onclick="downloadDashboardImage()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
         </div>
     </div>
 </div>
@@ -446,11 +511,11 @@
     <input type="file" id="templateInput" accept=".json" style="display:none;" onchange="loadTemplate(event)" data-page-node-id="eAmyZYnvu5EIJdM7h9nmWC">
 </div>
 
-<div class="dashboard dashboard-watermark-bg" id="dashboard" data-page-node-id="Pq0FTXr5SytHXnnEaBVVyc">
+<div class="dashboard dashboard-watermark-bg" id="dashboard" style="--sxcoal-watermark-img: url('https://fenwei-web-pro-1306768303.cos.ap-beijing.myqcloud.com/assets/img/imgCommon/logo_black.png');" data-page-node-id="Pq0FTXr5SytHXnnEaBVVyc">
     <div class="dashboard-header" data-page-node-id="xLagJIYSgyeGqLFDodZhSK">
         <div class="brand-bar" data-page-node-id="Bnd34iQ6frT5YpAgTompBj">
-            <img src="" alt="公司图标" class="brand-logo" style="display: none;" data-page-node-id="g089WC8V3wyHQRmROYUpr9">
-            <div class="meta-tag" id="meta-tag" data-page-node-id="SpKbsz0aoeBLzBAmQTBLBs"></div>
+            <img src="https://fenwei-web-pro-1306768303.cos.ap-beijing.myqcloud.com/assets/img/imgCommon/logo_black.png" alt="Sxcoal Logo" class="brand-logo" data-page-node-id="g089WC8V3wyHQRmROYUpr9">
+            <div class="meta-tag" id="meta-tag" data-page-node-id="SpKbsz0aoeBLzBAmQTBLBs">中国煤炭资源网 / Sxcoal 市场看板</div>
         </div>
         <h1 class="main-title" id="main-title" data-page-node-id="n4h1HI7cE2f0eLBegLeZoq">煤炭与工业数据动态分析中心</h1>
         <div class="executive-summary-box" id="executiveSummary" data-page-node-id="7vHpLgiofJRCixm4RmgRBO">正在生成数据总结...</div>
@@ -458,6 +523,7 @@
     <div class="filters-bar" id="filtersContainer" data-page-node-id="tX5gYL1Cqe2mNPvl7iNvyW"></div>
     <div class="kpi-grid" id="kpiGrid" data-page-node-id="2HU1yvlTXnxMY2daNbILfw"></div>
     <div class="vis-grid" id="chartGrid" data-page-node-id="wFTGLexlAcuVIAwKkJ9QxO"></div>
+    <div class="dashboard-footer" id="dashboardFooter" data-page-node-id="5fTrQk9nLpZaWm3BvGxEdY"></div>
 </div>
 
 <div class="modal-overlay" id="modelConfigModal" data-page-node-id="EQkYElebmK1D1IoniIetH3">
@@ -497,16 +563,149 @@
                 <input type="text" id="gMetaEn" placeholder="英文标签" style="width: 50%;" data-page-node-id="77FnijKVPDDIIqx3tISeL3">
             </div>
         </div>
+        <div class="form-group" style="border-top:1px solid var(--border); padding-top:14px;">
+            <label id="globalSourceLabel" style="font-weight:600;">图表来源 (支持双语自定义配置 - 全盘默认)</label>
+            <div id="globalSourceHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">全局默认来源，图表未单独设置时显示此文案；留空则回退系统默认。</div>
+            <div class="flex-row">
+                <input type="text" id="gSourceZh" placeholder="来源：中国煤炭资源网" style="width: 50%;">
+                <input type="text" id="gSourceEn" placeholder="Source: Sxcoal" style="width: 50%;">
+            </div>
+        </div>
         <div class="form-group" data-page-node-id="mieE58XN22uejcE7ZRrPx4">
             <label data-page-node-id="AwCxo9Z1ixl93ErGI9ZidJ">自定义全盘综述 (支持双语 - 留空则默认自动生成)</label>
             <textarea id="gSummaryZh" rows="3" placeholder="中文综述文本 (支持HTML标签)..." style="width:100%; margin-bottom:8px; border:1px solid #D1D5DB; border-radius:6px; padding:6px;"></textarea>
             <textarea id="gSummaryEn" rows="3" placeholder="英文综述文本 (支持HTML标签)..." style="width:100%; border:1px solid #D1D5DB; border-radius:6px; padding:6px;"></textarea>
         </div>
         <div class="form-group" style="border-top:1px solid var(--border); padding-top:14px;">
+            <label id="kpiPeriodCfgTitle" style="font-weight:600;">数据卡片期次文本（双语 - 留空按数据自动生成）</label>
+            <div id="kpiPeriodCfgHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">卡片「时间范围」为最新一期时显示第一行；当年累计、或数据字段为累计列时显示第二行（年初至最新）。打开弹窗时已按当前数据预填默认文案，可直接修改；卡片未单独设置期次文本时跟随这里。</div>
+            <div class="flex-row" style="margin-bottom:6px;">
+                <input type="text" id="gKpiLatestZh" placeholder="最新一期 · 中文" style="width: 50%;">
+                <input type="text" id="gKpiLatestEn" placeholder="最新一期 · 英文" style="width: 50%;">
+            </div>
+            <div class="flex-row">
+                <input type="text" id="gKpiYtdZh" placeholder="当年累计 · 中文" style="width: 50%;">
+                <input type="text" id="gKpiYtdEn" placeholder="当年累计 · 英文" style="width: 50%;">
+            </div>
+        </div>
+        <div class="form-group" style="border-top:1px solid var(--border); padding-top:14px;">
             <label id="unitMapTitle" style="font-weight:600;">数值单位双语映射（英文界面自动换算）</label>
             <div id="unitMapHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;"></div>
             <div id="unitMapRows"></div>
             <button type="button" class="btn-build" style="margin-top:8px; font-size:12px; padding:4px 10px;" onclick="addUnitMapRow()" id="unitMapAddBtn">＋ 添加单位</button>
+        </div>
+        <div class="form-group" style="border-top:1px solid var(--border); padding-top:14px;">
+            <label id="footerCfgTitle" style="font-weight:600;">仪表盘页脚（免责声明 / 联系方式 / 二维码）</label>
+            <div id="footerCfgHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">页脚固定在看板最底部，导出图片与导出 HTML 都会带上；任意字段留空即使用官方默认文案。</div>
+            <!-- 第五十八轮：复选框必须显式 width:auto —— .form-group input{width:100%} 会把它撑满整行，
+                 把后面的文字压成逐字竖排并被裁切（用户截图里的错乱排版） -->
+            <label class="footer-switch">
+                <input type="checkbox" id="gFooterEnabled" style="flex:0 0 auto; width:auto; height:auto; padding:0; margin:0;">
+                <span id="footerEnabledLabel" style="flex:0 1 auto; min-width:0; text-align:left;">在看板底部显示页脚</span>
+            </label>
+            <div id="footerCfgBody">
+                <!-- 第五十七轮：改为「列表默认展示摘要 + 点击某行展开编辑」，与来源/辅助字段等配置项的交互保持一致 -->
+                <div class="footer-items" id="footerItemList">
+                    <div class="footer-item" data-fkey="titleZh">
+                        <div class="fi-row" onclick="toggleFooterItem(this)">
+                            <span class="fi-name">中文标题</span>
+                            <span class="fi-val"></span>
+                            <span class="fi-pen">▸</span>
+                        </div>
+                        <div class="fi-edit" style="display:none;">
+                            <input type="text" id="gFooterTitleZh" placeholder="中文标题（默认：免责声明）" style="width:100%;">
+                        </div>
+                    </div>
+                    <div class="footer-item" data-fkey="titleEn">
+                        <div class="fi-row" onclick="toggleFooterItem(this)">
+                            <span class="fi-name">英文标题</span>
+                            <span class="fi-val"></span>
+                            <span class="fi-pen">▸</span>
+                        </div>
+                        <div class="fi-edit" style="display:none;">
+                            <input type="text" id="gFooterTitleEn" placeholder="English title (default: Disclaimer)" style="width:100%;">
+                        </div>
+                    </div>
+                    <div class="footer-item" data-fkey="bodyZh">
+                        <div class="fi-row" onclick="toggleFooterItem(this)">
+                            <span class="fi-name">中文正文</span>
+                            <span class="fi-val"></span>
+                            <span class="fi-pen">▸</span>
+                        </div>
+                        <div class="fi-edit" style="display:none;">
+                            <textarea id="gFooterBodyZh" rows="3" placeholder="中文免责声明正文（留空用官方文案）" style="width:100%;"></textarea>
+                        </div>
+                    </div>
+                    <div class="footer-item" data-fkey="bodyEn">
+                        <div class="fi-row" onclick="toggleFooterItem(this)">
+                            <span class="fi-name">英文正文</span>
+                            <span class="fi-val"></span>
+                            <span class="fi-pen">▸</span>
+                        </div>
+                        <div class="fi-edit" style="display:none;">
+                            <textarea id="gFooterBodyEn" rows="3" placeholder="English disclaimer text (leave empty for the official copy)" style="width:100%;"></textarea>
+                        </div>
+                    </div>
+                    <div class="footer-item" data-fkey="contactZh">
+                        <div class="fi-row" onclick="toggleFooterItem(this)">
+                            <span class="fi-name">中文联系方式</span>
+                            <span class="fi-val"></span>
+                            <span class="fi-pen">▸</span>
+                        </div>
+                        <div class="fi-edit" style="display:none;">
+                            <textarea id="gFooterContactZh" rows="2" placeholder="中文联系方式（一行一条，留空用官方文案）" style="width:100%;"></textarea>
+                        </div>
+                    </div>
+                    <div class="footer-item" data-fkey="contactEn">
+                        <div class="fi-row" onclick="toggleFooterItem(this)">
+                            <span class="fi-name">英文联系方式</span>
+                            <span class="fi-val"></span>
+                            <span class="fi-pen">▸</span>
+                        </div>
+                        <div class="fi-edit" style="display:none;">
+                            <textarea id="gFooterContactEn" rows="2" placeholder="English contact info (one line each, leave empty for the official copy)" style="width:100%;"></textarea>
+                        </div>
+                    </div>
+                    <div class="footer-item" data-fkey="qrUrl">
+                        <div class="fi-row" onclick="toggleFooterItem(this)">
+                            <span class="fi-name">二维码图片</span>
+                            <span class="fi-val"></span>
+                            <span class="fi-pen">▸</span>
+                        </div>
+                        <div class="fi-edit" style="display:none;">
+                            <input type="text" id="gFooterQrUrl" placeholder="Sxcoal APP 二维码图片地址（留空用官方二维码）" style="width:100%;">
+                        </div>
+                    </div>
+                    <div class="footer-item" data-fkey="socialsEn">
+                        <div class="fi-row" onclick="toggleFooterItem(this)">
+                            <span class="fi-name">英文社媒</span>
+                            <span class="fi-val"></span>
+                            <span class="fi-pen">▸</span>
+                        </div>
+                        <div class="fi-edit" style="display:none;">
+                            <div id="footerSocialHint" style="font-size:11px; color:#6B7280; margin:2px 0 6px; line-height:1.6;">英文版页脚显示的社媒入口；「平台」决定用哪个 logo，名称留空则只显示 logo（平台选“其他”则只显示文字）。</div>
+                            <div id="footerSocialRowsEn"></div>
+                            <button type="button" class="btn-build" style="font-size:12px; padding:4px 10px; margin-top:2px;" onclick="addFooterSocialRow('En')" id="footerSocialAddBtn">＋ 添加社媒链接</button>
+                        </div>
+                    </div>
+                    <div class="footer-item" data-fkey="socialsZh">
+                        <div class="fi-row" onclick="toggleFooterItem(this)">
+                            <span class="fi-name">中文社媒</span>
+                            <span class="fi-val"></span>
+                            <span class="fi-pen">▸</span>
+                        </div>
+                        <div class="fi-edit" style="display:none;">
+                            <div id="footerSocialHintZh" style="font-size:11px; color:#6B7280; margin:2px 0 6px; line-height:1.6;">中文版页脚显示的社媒入口（默认留空，例如微信公众号、视频号）。</div>
+                            <div id="footerSocialRowsZh"></div>
+                            <button type="button" class="btn-build" style="font-size:12px; padding:4px 10px; margin-top:2px;" onclick="addFooterSocialRow('Zh')" id="footerSocialAddBtnZh">＋ 添加社媒链接</button>
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                    <button type="button" class="btn-build" style="font-size:12px; padding:4px 10px;" onclick="resetFooterConfig()" id="footerResetBtn">恢复默认文案</button>
+                </div>
+                <div id="footerCfgNote" style="font-size:11px; color:#9CA3AF; margin-top:6px; line-height:1.6;"></div>
+            </div>
         </div>
         <div class="form-group" style="border-top:1px solid var(--border); padding-top:14px;" data-page-node-id="1kp6hcQXE4iG5yQAr6GD04">
             <label id="globalSlicerLabel" data-page-node-id="bxjcGEIlQrj2diPLODuTlp">添加全局非数值筛选器 (切片器)</label>
@@ -554,11 +753,11 @@
         <div class="form-row" data-page-node-id="xTtthm7iEVb50bU0mdFEZE">
             <div class="form-group" data-page-node-id="P8qDJ9ATZeNtTNFxMoApVd">
                 <label data-page-node-id="BqFdsebCNtwkksW0coBSCa">数据字段 (度量)</label>
-                <select id="kpiFieldSel" data-page-node-id="ZazbPrn1OByj73yvEk4UdA"></select>
+                <select id="kpiFieldSel" onchange="syncKpiPeriodTextDefault()" data-page-node-id="ZazbPrn1OByj73yvEk4UdA"></select>
             </div>
             <div class="form-group" data-page-node-id="EMuHdFhNFsLZS0Hvtw4qQo">
                 <label data-page-node-id="B6D6kJ6lWoaIacbychfhm5">时间范围</label>
-                <select id="kpiTimeScopeSel" onchange="toggleCustomTime('kpi')" data-page-node-id="FMwNI1ja0fAFDVTRGQ9j8i">
+                <select id="kpiTimeScopeSel" onchange="toggleCustomTime('kpi'); syncKpiPeriodTextDefault();" data-page-node-id="FMwNI1ja0fAFDVTRGQ9j8i">
                     <option value="latest" data-page-node-id="53Qa15tsHzXj6lFK46cMRw">最新一期</option>
                     <option value="ytd" data-page-node-id="C8ZkKNtN3XeA9rttVFJZlq">当年累计</option>
                     <option value="all" data-page-node-id="3FDn4lT1IrhK4CDJ4cEtLV">全量筛选区间</option>
@@ -570,9 +769,9 @@
         <div class="form-group" id="kpiCustomTimeGroup" style="display:none;" data-page-node-id="LMoqpSgBKoY0i57FPydvKd">
             <label data-page-node-id="7vuZrtKp4en1Lf6YMawd8O">自定义时间</label>
             <div class="flex-row" data-page-node-id="xebR9oHGkVQ67b8TVK4oWG">
-                <input type="date" id="kpiCustomStart" data-page-node-id="8Ggm0QbXAosPlHDTKaQz9M">
+                <input type="date" id="kpiCustomStart" onchange="syncKpiPeriodTextDefault()" data-page-node-id="8Ggm0QbXAosPlHDTKaQz9M">
                 <span id="kpiCustomTo" style="display:none;" data-page-node-id="Oxoa2rKwcg3fC9DIjIeIiC">至</span>
-                <input type="date" id="kpiCustomEnd" style="display:none;" data-page-node-id="WN0A1XVhB98VXtt0d6oUe5">
+                <input type="date" id="kpiCustomEnd" style="display:none;" onchange="syncKpiPeriodTextDefault()" data-page-node-id="WN0A1XVhB98VXtt0d6oUe5">
             </div>
         </div>
         <div class="form-row" data-page-node-id="zux4GO9EgTHreX2oPM9GbF">
@@ -738,11 +937,11 @@
         <div class="local-filters-zone" style="margin-bottom:14px;" data-page-node-id="oRRAaxsL3wfsT5xbCmfQEs">
             <label style="font-size: 12px; font-weight: 600; margin-bottom: 6px; display: block;" data-page-node-id="SdIM6SPPPUYx10vlkMSLkT">图表来源 (支持双语自定义配置 - 显示于图表右下/底部)</label>
             <div class="flex-row" data-page-node-id="dIK6gHreokz281lirFEhEm">
-                <input type="text" id="chartSourceZh" placeholder="公司来源" data-page-node-id="ouvsKBVFjrviI4J5kOWM3b">
-                <input type="text" id="chartSourceEn" placeholder="Company source" data-page-node-id="FIb62BbkREctgoroAYt4YH">
+                <input type="text" id="chartSourceZh" placeholder="中国煤炭资源网" data-page-node-id="ouvsKBVFjrviI4J5kOWM3b">
+                <input type="text" id="chartSourceEn" placeholder="Sxcoal" data-page-node-id="FIb62BbkREctgoroAYt4YH">
             </div>
             <div style="font-size:11px; color:#9CA3AF; margin-top:4px; line-height:1.6;" data-page-node-id="8JVVvpSWof0vMFOnsop1wH">
-                留空则使用当前公司名称作为来源
+                已预填当前生效来源（全盘默认来自【全局设置 - 图表来源】），可直接编辑；改为与全盘默认一致或留空，则跟随全盘默认。
             </div>
         </div>
         <div class="local-filters-zone" data-page-node-id="AnTZjkpgAqIJsBGLHkzAnX">
@@ -759,7 +958,7 @@
 </div>
 
 <div class="modal-overlay" id="chartOverlayModal" style="z-index: 2000;" data-page-node-id="2MS1Rsa7ZArLxpxxcJvrul">
-    <div class="modal-content dashboard-watermark-bg" id="chartOverlayContent" style="width: 90vw; max-width: 1200px; height: 80vh; max-height: 900px; display: flex; flex-direction: column; padding: 14px;" data-page-node-id="9nkWXDxYePKtXGylzlt486">
+    <div class="modal-content dashboard-watermark-bg" id="chartOverlayContent" style="width: 90vw; max-width: 1200px; height: 80vh; max-height: 900px; display: flex; flex-direction: column; padding: 14px; --sxcoal-watermark-img: url('https://fenwei-web-pro-1306768303.cos.ap-beijing.myqcloud.com/assets/img/imgCommon/logo_black.png');" data-page-node-id="9nkWXDxYePKtXGylzlt486">
         <!-- 放大弹层顶部：标题居中（左侧 flex:1）+ 右侧按钮组（与仪表盘下载图同款：16px 加粗黑色）
        data-drag-handle="1" 让 setupModalDrag 识别这一行为可拖拽区域（用户需求 5） -->
         <div data-drag-handle="1" style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px; min-height: 32px; cursor: move; user-select: none;" data-page-node-id="hAiTOelyUhN6cRD1KDRRM2">
@@ -775,7 +974,7 @@
         <!-- 放大弹层底部：来源 + Logo，与 ECharts option.grid.left/right=64 同一条垂线（紧凑布局） -->
         <div id="chartOverlayFooter" style="display: flex; justify-content: space-between; align-items: center; flex: 0 0 auto; color: #9CA3AF; font-size: 12px; padding: 8px 64px 4px; margin-top: 4px; font-family: 'Source Sans 3', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;" data-page-node-id="4pCkIGDsLdIB8enQPzXMzf">
             <div class="chart-overlay-source" id="chartOverlaySource" style="flex: 1; padding-right: 8px; text-align: left;" data-page-node-id="AST98WmilHADFxueEBsVBE"></div>
-            <div class="chart-overlay-logo" data-page-node-id="h485uzSYvSvj17vQ39gyxt"><img alt="公司图标" src="" style="height: 20px; display: none;" data-page-node-id="CH3RxuFo0VenC7XHZu2YI4"></div>
+            <div class="chart-overlay-logo" data-page-node-id="h485uzSYvSvj17vQ39gyxt"><img alt="Sxcoal" src="https://fenwei-web-pro-1306768303.cos.ap-beijing.myqcloud.com/assets/img/imgCommon/logo_black.png" style="height: 20px; display: block;" data-page-node-id="CH3RxuFo0VenC7XHZu2YI4"></div>
         </div>
     </div>
 </div>
@@ -831,7 +1030,7 @@
     let modelRelationships = [];
 
     let uiText = {
-        zh: { source: "来源：中国煤炭资源网", others: "其它", rangeLabel: "历史区间带", flat: "持平", all: "全部 (All)", edit: "编辑", delete: "删除", duplicate: "复制", enlarge: "放大", landscape: "横屏", close: "关闭", fullscreen: "全屏", download: "下载", copyImage: "复制图片", copyOk: "图片已复制到剪贴板", copyFail: "复制失败，已改为直接下载图片", embed: "嵌入代码", embedCopied: "已复制嵌入代码，可粘贴到其它平台", embedCopiedFailed: "复制失败，请手动选择", globalSlicerLabel: "添加全局非数值筛选器 (切片器)", addBtn: "添加", resetGlobal: "重置全局筛选", applyRefresh: "应用并刷新全盘", unitMapTitle: "数值单位双语映射（英文界面自动换算）", unitMapHint: "自动识别事实表表头括号内的单位。为每个单位填写英文单位名与换算数值（英文值 = 原值 ÷ 数值 或 × 数值）。例：亿千瓦时 → TWh，÷ 10。英文单位留空则该单位不换算。", unitMapAddBtn: "＋ 添加单位", maUnitSuffix: "期", periodUnitMonth: "月", periodUnitDay: "日", periodUnitWeek: "周", periodUnitQuarter: "季度", periodUnitYear: "年", maPeriodLabel: "移动期数", histYearsLabel: "历史年数", histYearsHint: "年 (从最新年份往前推)", chartAnalyticsNone: "无", chartAnalyticsMA: "移动平均线", chartAnalyticsHistRange: "历史同期区间带",
+        zh: { source: "来源：中国煤炭资源网", others: "其它", rangeLabel: "历史区间带", flat: "持平", all: "全部 (All)", edit: "编辑", delete: "删除", duplicate: "复制", enlarge: "放大", landscape: "横屏", close: "关闭", fullscreen: "全屏", download: "下载", copyImage: "复制图片", copyOk: "图片已复制到剪贴板", copyFail: "复制失败，已改为直接下载图片", embed: "嵌入代码", embedCopied: "已复制嵌入代码，可粘贴到其它平台", embedCopiedFailed: "复制失败，请手动选择", globalSlicerLabel: "添加全局非数值筛选器 (切片器)", addBtn: "添加", resetGlobal: "重置全局筛选", applyRefresh: "应用并刷新全盘", unitMapTitle: "数值单位双语映射（英文界面自动换算）", unitMapHint: "自动识别事实表表头括号内的单位。为每个单位填写英文单位名与换算数值（英文值 = 原值 ÷ 数值 或 × 数值）。例：亿千瓦时 → TWh，÷ 10。英文单位留空则该单位不换算。", unitMapAddBtn: "＋ 添加单位", globalSourceLabel: "图表来源 (支持双语自定义配置 - 全盘默认)", globalSourceHint: "全盘默认来源，图表未单独设置时显示此文案；留空则回退系统默认。", maUnitSuffix: "期", periodUnitMonth: "月", periodUnitDay: "日", periodUnitWeek: "周", periodUnitQuarter: "季度", periodUnitYear: "年", maPeriodLabel: "移动期数", histYearsLabel: "历史年数", histYearsHint: "年 (从最新年份往前推)", chartAnalyticsNone: "无", chartAnalyticsMA: "移动平均线", chartAnalyticsHistRange: "历史同期区间带",
             chartAnalyticsAvg: "平均线", chartAnalyticsMedian: "中位线", chartAnalyticsMax: "最大值线", chartAnalyticsMin: "最小值线",
             chartAnalyticsP25: "P25 分位线", chartAnalyticsP75: "P75 分位线", chartAnalyticsStd: "±1σ 标准差带", chartAnalyticsTrend: "线性趋势线", chartAnalyticsTarget: "目标线", targetValueLabel: "目标值",
             periodUnitMonthSg: "月", periodUnitDaySg: "日", periodUnitWeekSg: "周", periodUnitQuarterSg: "季度", periodUnitYearSg: "年",
@@ -841,7 +1040,7 @@
             lfChooseDim: "-- 选择维度 --", lfAll: "全选", lfClear: "清空", lfSearchPh: "搜索取值...",
             lfAggregate: "聚合显示", lfSeparate: "分别展示", lfNotSelected: "未选择", lfPickDim: "请先选择维度", lfAggTip: "多个取值的聚合方式", lfDelTip: "删除该筛选行",
             aggSum: "求和", aggAvg: "平均", aggMax: "最大", aggMin: "最小", aggCount: "计数" },
-        en: { source: "Source: Sxcoal", others: "Other", rangeLabel: "Hist Range Area", flat: "Flat", all: "All", edit: "Edit", delete: "Delete", duplicate: "Copy", enlarge: "Enlarge", landscape: "Landscape", close: "Close", fullscreen: "Fullscreen", download: "Download", copyImage: "Copy Image", copyOk: "Image copied to clipboard", copyFail: "Copy failed; image downloaded instead", embed: "Embed Code", embedCopied: "Embed code copied. Paste it into other platforms.", embedCopiedFailed: "Copy failed; please select manually.", globalSlicerLabel: "Add Global Non-numeric Filter (Slicer)", addBtn: "Add", resetGlobal: "Reset Global Filters", applyRefresh: "Apply & Refresh", unitMapTitle: "Bilingual Unit Mapping (English view)", unitMapHint: "Units in fact-table headers are auto-detected. Set the English unit and conversion factor (EN value = raw ÷ factor or × factor). E.g. 亿千瓦时 → TWh, ÷ 10. Leave EN unit empty to skip a unit.", unitMapAddBtn: "＋ Add Unit", maUnitSuffix: "periods", periodUnitMonth: "Months", periodUnitDay: "Days", periodUnitWeek: "Weeks", periodUnitQuarter: "Quarters", periodUnitYear: "Years", maPeriodLabel: "MA Period", histYearsLabel: "Historical Years", histYearsHint: "years (counting back from the latest year)", chartAnalyticsNone: "None", chartAnalyticsMA: "Moving Average", chartAnalyticsHistRange: "Historical Range Band",
+        en: { source: "Source: Sxcoal", others: "Other", rangeLabel: "Hist Range Area", flat: "Flat", all: "All", edit: "Edit", delete: "Delete", duplicate: "Copy", enlarge: "Enlarge", landscape: "Landscape", close: "Close", fullscreen: "Fullscreen", download: "Download", copyImage: "Copy Image", copyOk: "Image copied to clipboard", copyFail: "Copy failed; image downloaded instead", embed: "Embed Code", embedCopied: "Embed code copied. Paste it into other platforms.", embedCopiedFailed: "Copy failed; please select manually.", globalSlicerLabel: "Add Global Non-numeric Filter (Slicer)", addBtn: "Add", resetGlobal: "Reset Global Filters", applyRefresh: "Apply & Refresh", unitMapTitle: "Bilingual Unit Mapping (English view)", unitMapHint: "Units in fact-table headers are auto-detected. Set the English unit and conversion factor (EN value = raw ÷ factor or × factor). E.g. 亿千瓦时 → TWh, ÷ 10. Leave EN unit empty to skip a unit.", unitMapAddBtn: "＋ Add Unit", globalSourceLabel: "Chart Source (Bilingual - Dashboard Default)", globalSourceHint: "Global default source shown on all charts unless a chart overrides it. Leave empty to fall back to the system default.", maUnitSuffix: "periods", periodUnitMonth: "Months", periodUnitDay: "Days", periodUnitWeek: "Weeks", periodUnitQuarter: "Quarters", periodUnitYear: "Years", maPeriodLabel: "MA Period", histYearsLabel: "Historical Years", histYearsHint: "years (counting back from the latest year)", chartAnalyticsNone: "None", chartAnalyticsMA: "Moving Average", chartAnalyticsHistRange: "Historical Range Band",
             chartAnalyticsAvg: "Average", chartAnalyticsMedian: "Median", chartAnalyticsMax: "Max", chartAnalyticsMin: "Min",
             chartAnalyticsP25: "P25", chartAnalyticsP75: "P75", chartAnalyticsStd: "±1σ Band", chartAnalyticsTrend: "Linear Trend", chartAnalyticsTarget: "Target", targetValueLabel: "Target Value",
             periodUnitMonthSg: "Month", periodUnitDaySg: "Day", periodUnitWeekSg: "Week", periodUnitQuarterSg: "Quarter", periodUnitYearSg: "Year",
@@ -853,13 +1052,25 @@
             aggSum: "Sum", aggAvg: "Avg", aggMax: "Max", aggMin: "Min", aggCount: "Count" }
     };
 
-    // 默认来源文案由用户设置的公司名称生成。
-    const DEFAULT_SOURCE_ZH = '';
-    const DEFAULT_SOURCE_EN = '';
+    // 默认来源文案：中文「来源：中国煤炭资源网」，英文「Source: Sxcoal」
+    const DEFAULT_SOURCE_ZH = '来源：中国煤炭资源网';
+    const DEFAULT_SOURCE_EN = 'Source: Sxcoal';
+
+    // 全盘默认来源（全局设置里配置）：中文「来源：中国煤炭资源网」，英文「Source: Sxcoal」
+    function getGlobalSource(lang) {
+        let lg = lang || window.currentLang || 'zh';
+        // 注意：dashboardConfig 是脚本级 let，不在 window 上（用 window.dashboardConfig 会取不到）
+        let cfg = (typeof dashboardConfig !== 'undefined' && dashboardConfig) ? dashboardConfig : {};
+        let v = (lg === 'en') ? (cfg.dashSourceEn || '') : (cfg.dashSourceZh || '');
+        if (v && String(v).trim()) return String(v).trim();
+        return lg === 'en' ? DEFAULT_SOURCE_EN : DEFAULT_SOURCE_ZH;
+    }
 
     /**
      * 解析图表来源文案（支持图表级双语自定义配置）。
-     * 优先级：config.sourceZh / config.sourceEn（编辑分析图表里配置） > uiText 全局默认。
+     * 优先级：config.sourceZh / config.sourceEn（编辑分析图表里配置）
+     *        > 全局设置里的全盘默认来源（dashboardConfig.dashSourceZh / dashSourceEn）
+     *        > uiText 系统默认。
      * @param {object} config 图表配置
      * @param {string} lang  'zh' | 'en'，不传则取 window.currentLang
      * @returns {string} 来源文案
@@ -868,8 +1079,7 @@
         let lg = lang || window.currentLang || 'zh';
         let custom = (config && lg === 'en') ? (config.sourceEn || '') : (config && config.sourceZh || '');
         if (custom && String(custom).trim()) return String(custom).trim();
-        let t = uiText[lg] || uiText.zh;
-        return (t && t.source) || getBrandSource(lg);
+        return getGlobalSource(lg);
     }
 
     const ICONS = {
@@ -886,69 +1096,17 @@
 
     let dashboardConfig = {
         dashTitleZh: '煤炭与工业数据动态分析', dashTitleEn: 'Coal & Industrial Market Analytics',
-        dashMetaZh: '', dashMetaEn: '',
+        dashMetaZh: '中国煤炭资源网数据看板', dashMetaEn: 'Sxcoal Intelligence Dashboard',
         dashSummaryZh: '', dashSummaryEn: '',
         dateRange: { active: false, start: '', end: '' },
+        // 第六十一轮：数据卡片期次文本全盘默认（双语）。空串 = 跟随数据自动生成（最新一期→最新期次颗粒度；当年累计→年初至最新）
+        kpiPeriodText: { latestZh: '', latestEn: '', ytdZh: '', ytdEn: '' },
         slicers: [], kpis: [], charts: [], headerMap: {}, dateColumn: null
     };
-
-    let brandIdentity = { name: '', logo: '' };
-    let selectedLogoDataUri = '';
-    function getBrandName() {
-        return String(brandIdentity.name || '').trim();
-    }
-    function getBrandSource(lang) {
-        let name = getBrandName();
-        return name ? (lang === 'en' ? `Source: ${name}` : `来源：${name}`) : '';
-    }
-    function applyBrandIdentity() {
-        let nameInput = document.getElementById('companyNameInput');
-        let status = document.getElementById('brandSettingsStatus');
-        let name = nameInput ? nameInput.value.trim() : '';
-        brandIdentity = { name: name, logo: selectedLogoDataUri };
-        dashboardConfig.dashMetaZh = name ? `${name} 数据看板` : '';
-        dashboardConfig.dashMetaEn = name ? `${name} Intelligence Dashboard` : '';
-        uiText.zh.source = getBrandSource('zh');
-        uiText.en.source = getBrandSource('en');
-        document.title = name ? `${name} 行业数据与市场分析仪表盘` : '行业数据与市场分析仪表盘';
-        let logo = document.querySelector('.brand-logo');
-        if (logo) {
-            logo.src = brandIdentity.logo;
-            logo.alt = name ? `${name} 公司图标` : '公司图标';
-            logo.style.display = brandIdentity.logo ? 'block' : 'none';
-        }
-        let overlayLogo = document.querySelector('#chartOverlayContent .chart-overlay-logo img');
-        if (overlayLogo) {
-            overlayLogo.src = brandIdentity.logo;
-            overlayLogo.alt = name ? `${name} 公司图标` : '公司图标';
-            overlayLogo.style.display = brandIdentity.logo ? 'block' : 'none';
-        }
-        ['dashboard', 'chartOverlayContent'].forEach(id => {
-            let el = document.getElementById(id);
-            if (el) el.style.setProperty('--sxcoal-watermark-img', `url("${brandIdentity.logo}")`);
-        });
-        let statusText = document.getElementById('meta-tag');
-        if (statusText) statusText.textContent = dashboardConfig.dashMetaZh;
-        if (status) { status.textContent = name || brandIdentity.logo ? '已应用可选品牌信息。' : '未设置品牌信息，将使用无品牌模式。'; status.style.color = '#047857'; }
-    }
 
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
     const loadingOverlay = document.getElementById('loadingOverlay');
-    const companyLogoInput = document.getElementById('companyLogoInput');
-    if (companyLogoInput) {
-        companyLogoInput.addEventListener('change', (event) => {
-            let file = event.target.files && event.target.files[0];
-            if (!file) return;
-            let reader = new FileReader();
-            reader.onload = () => {
-                selectedLogoDataUri = String(reader.result || '');
-                let preview = document.getElementById('companyLogoPreview');
-                if (preview) { preview.src = selectedLogoDataUri; preview.style.display = 'block'; }
-            };
-            reader.readAsDataURL(file);
-        });
-    }
 
     // 点击打开选择框由 <label for="fileInput"> 原生处理，这里不再调用 fileInput.click()，
     // 否则会与 label 的原生激活叠加成两次触发（表现为弹框闪一下就关、或干脆不弹）。
@@ -1812,14 +1970,19 @@
 
     function switchLanguage(lang) {
         window.currentLang = lang;
+        // 第五十二轮：语言切换图标按钮（#btn-lang / #langCode）同步当前语言代码
+        let lc = document.getElementById('langCode');
+        if (lc) lc.textContent = (lang === 'en') ? 'EN' : '中';
         document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById(`btn-lang-${lang}`).classList.add('active');
+        // 第四十九轮：语言按钮/顶栏在导出的交互式 HTML 里可能不存在（上传区与构建器节点已被移除），
+        // 取不到时不能抛错 —— 之前这里 null.classList 异常会中断整个初始化，导致导出页图表全空。
+        let langBtn = document.getElementById(`btn-lang-${lang}`);
+        if (langBtn) langBtn.classList.add('active');
 
-        let brandName = getBrandName();
-        let tagVal = lang === 'en' ? (dashboardConfig.dashMetaEn || (brandName ? `${brandName} Intelligence Dashboard` : '')) : (dashboardConfig.dashMetaZh || (brandName ? `${brandName} 数据看板` : ''));
+        let tagVal = lang === 'en' ? (dashboardConfig.dashMetaEn || 'Sxcoal Intelligence Dashboard') : (dashboardConfig.dashMetaZh || '中国煤炭资源网 / Sxcoal 市场看板');
         let titleVal = lang === 'en' ? (dashboardConfig.dashTitleEn || 'Coal & Industrial Market Analytics') : (dashboardConfig.dashTitleZh || '煤炭与工业数据动态分析中心');
-        document.getElementById('meta-tag').textContent = tagVal;
-        document.getElementById('main-title').textContent = titleVal;
+        let metaEl = document.getElementById('meta-tag'); if (metaEl) metaEl.textContent = tagVal;
+        let titleEl = document.getElementById('main-title'); if (titleEl) titleEl.textContent = titleVal;
 
         populateSelectOptions();
         // 只重算筛选结果、不渲染（下面统一渲染一次，避免图表被渲染两遍）
@@ -1836,7 +1999,12 @@
             } catch (e) { console.warn('language switch re-render failed', e); }
         }
     }
-    
+
+    // 第五十二轮：语言切换图标按钮（顶栏右上角）点击后中/英互切
+    function toggleLanguage() {
+        switchLanguage(window.currentLang === 'zh' ? 'en' : 'zh');
+    }
+
     function openModelConfigModal() {
         let factCols = columns;
         if (!Array.isArray(modelRelationships)) modelRelationships = [];
@@ -2322,7 +2490,7 @@
         row.innerHTML = `<input type="text" class="aux-name" placeholder="字段名（与原字段名一致）" title="需与数据里的原字段名一致，重命名才会生效" style="width:30%; min-width:0; font-size:12px;">
             <input type="text" class="hh-zh" placeholder="中文显示名" style="width:30%;">
             <input type="text" class="hh-en" placeholder="英文显示名" style="width:30%;">
-            <button type="button" class="remove-btn" style="flex:0 0 auto; margin-left:4px;" title="移除该字段" onclick="this.parentNode.remove()">✖</button>`;
+            <button type="button" class="remove-btn" style="position:static; flex:0 0 auto; margin-left:4px; font-size:11px; color:#EF4444; cursor:pointer; background:none; border:none; padding:0 2px;" title="移除该字段" onclick="this.parentNode.remove()">✖</button>`;
         container.appendChild(row);
         row.querySelector('.aux-name').focus();
     }
@@ -2364,7 +2532,24 @@
         
         dashboardConfig.dashTitleZh = document.getElementById('gTitleZh').value; dashboardConfig.dashTitleEn = document.getElementById('gTitleEn').value;
         dashboardConfig.dashMetaZh = document.getElementById('gMetaZh').value; dashboardConfig.dashMetaEn = document.getElementById('gMetaEn').value;
+        // 第四十八轮：全盘默认来源（与系统默认一致时存空串，保持"跟随系统默认"语义）
+        let _gsZh = (document.getElementById('gSourceZh') || {}).value || '';
+        let _gsEn = (document.getElementById('gSourceEn') || {}).value || '';
+        dashboardConfig.dashSourceZh = (_gsZh.trim() === DEFAULT_SOURCE_ZH) ? '' : _gsZh.trim();
+        dashboardConfig.dashSourceEn = (_gsEn.trim() === DEFAULT_SOURCE_EN) ? '' : _gsEn.trim();
         dashboardConfig.dashSummaryZh = document.getElementById('gSummaryZh').value; dashboardConfig.dashSummaryEn = document.getElementById('gSummaryEn').value;
+        // 第六十一轮：数据卡片期次文本 —— 与当前数据自动生成的默认一致时存空串，保持"跟随数据"语义
+        try {
+            let _autoL = getKpiPeriodAutoDefault('latest') || {};
+            let _autoY = getKpiPeriodAutoDefault('ytd') || {};
+            let _gpv = (id) => { let el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+            let _keepOrEmpty = (v, auto) => (auto && v && v === String(auto).trim()) ? '' : v;
+            dashboardConfig.kpiPeriodText = {
+                latestZh: _keepOrEmpty(_gpv('gKpiLatestZh'), _autoL.zh), latestEn: _keepOrEmpty(_gpv('gKpiLatestEn'), _autoL.en),
+                ytdZh: _keepOrEmpty(_gpv('gKpiYtdZh'), _autoY.zh), ytdEn: _keepOrEmpty(_gpv('gKpiYtdEn'), _autoY.en)
+            };
+        } catch (e) { console.warn('期次文本保存失败', e); }
+        try { saveFooterConfigFromUI(); } catch (e) { console.warn('页脚配置保存失败', e); }
         closeModal('globalSettingsModal'); switchLanguage(window.currentLang); 
     }
     
@@ -3061,8 +3246,13 @@
 
         let timeText = customTimeText;
         if (!timeText) {
-            if(kpi.timeScope === 'latest') timeText = isEn ? 'Latest Period' : '最新期次';
-            else if(kpi.timeScope === 'ytd') timeText = isEn ? 'YTD' : '当年累计';
+            // 第六十一轮：卡片未自定义时 → 全局期次文本 > 按数据自动生成 > 系统兜底
+            let __mode = getKpiPeriodMode(kpi);
+            let __auto = __mode ? buildKpiPeriodTextDefault(kpi.field, kpi.timeScope, kpi.customStart, kpi.customEnd) : null;
+            let __g = getGlobalKpiPeriodText(__mode, isEn);
+            let __a = (__auto && (isEn ? __auto.en : __auto.zh)) || '';
+            if(kpi.timeScope === 'latest') timeText = __g || __a || (isEn ? 'Latest Period' : '最新期次');
+            else if(kpi.timeScope === 'ytd') timeText = __g || __a || (isEn ? 'YTD' : '当年累计');
             else if(kpi.timeScope === 'custom-point') timeText = kpi.customStart;
             else timeText = isEn ? 'Filtered' : '全局筛选';
         }
@@ -3155,6 +3345,393 @@
         }
     }
 
+    // ===== 第五十六轮：仪表盘页脚（免责声明 / 联系方式 / APP 二维码 / 英文社媒链接）=====
+    // 默认文案为官方版本，用户可在【全局设置 - 仪表盘页脚】里改写任意字段，或直接关闭。
+    // 配置存放在 dashboardConfig.footer，随模板保存；页脚在 #dashboard 内，导出与整屏截图都会带上。
+    const FOOTER_DEFAULT_QR = 'data:image/png;base64,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';
+    const FOOTER_TEXT_ZH = '本产品由汾渭数字信息技术有限公司制作，仅供中国煤炭资源网（www.sxcoal.com）客户参考使用。客户不应将其作为投资决策的唯一依据，亦不应以此取代自身独立判断。本公司不对客户因使用本产品内容而导致的任何损失承担责任。';
+    const FOOTER_CONTACT_ZH = '如需了解更多详情，请通过以下方式联系我们：\n电话：0351-8214333 / 4728660\n邮箱：sales@fwenergy.com';
+    const FOOTER_TEXT_EN = 'This product is produced by Fenwei Digital Information Technology Co., Ltd. and is provided solely for the reference of customers of Sxcoal (www.sxcoal.com). It should not be used as the sole basis for investment decisions, nor should it be regarded as a substitute for independent judgment. The Company shall not be liable for any losses incurred by customers arising from the use of this product.';
+    const FOOTER_CONTACT_EN = 'For further information, please contact us:\nTel: +86 351 7219 322\nEmail: inquiry@fwenergy.com';
+    // 第五十八轮：社媒结构升级为 { platform, label, url }
+    //  - platform 决定用哪个 logo（不再靠名称模糊匹配，显示名可以随便改）
+    //  - 同一平台可以有多个入口，靠 label 区分（WhatsApp Channel / Community、Telegram Channel / Group）
+    //  - 英文默认 6 个入口；中文默认留空（全局设置里预留了「中文社媒」配置项）
+    //  - 两列网格的填充顺序是「按行」，所以这里按并列顺序排列
+    const FOOTER_SOCIAL_DEFAULT_EN = [
+        { platform: 'whatsapp', label: 'WhatsApp Channel', url: 'https://whatsapp.com/channel/0029VaCvfV87j6g5Ha7kDK0O' },
+        { platform: 'telegram', label: 'Telegram Channel', url: 'https://t.me/sxcoal' },
+        { platform: 'whatsapp', label: 'WhatsApp Community', url: 'https://chat.whatsapp.com/IF6aSCx0nnJ9Af8SFU6GWx' },
+        { platform: 'telegram', label: 'Telegram Group', url: 'https://t.me/coaltracker' },
+        { platform: 'twitter', label: 'X (Twitter)', url: 'https://twitter.com/sxcoal' },
+        { platform: 'linkedin', label: 'LinkedIn', url: 'http://www.linkedin.com/company/fwenergy' }
+    ];
+    const FOOTER_SOCIAL_DEFAULT_ZH = [];
+    // 平台表：品牌色圆角底 + 白色 logo。图标用内联 SVG，不依赖任何外链图片
+    //（既避免跨域导致整屏截图失败，也保证离线与导出页都能正常显示）。
+    const FOOTER_SOCIAL_PLATFORMS = {
+        whatsapp: {
+            color: '#25D366',
+            path: 'M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z'
+        },
+        telegram: {
+            color: '#26A5E4',
+            path: 'M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z'
+        },
+        twitter: {
+            color: '#111111',
+            path: 'M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z'
+        },
+        linkedin: {
+            color: '#0A66C2',
+            path: 'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z'
+        },
+        wechat: {
+            color: '#07C160',
+            path: 'M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178A1.17 1.17 0 0 1 4.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178 1.17 1.17 0 0 1-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.283 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 0 1 .598.082l1.584.926a.272.272 0 0 0 .14.047c.134 0 .24-.111.24-.247 0-.06-.023-.12-.038-.177l-.327-1.233a.582.582 0 0 1-.023-.156.49.49 0 0 1 .201-.398C23.024 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-6.656-6.088V8.89c-.135-.01-.27-.027-.407-.032zm-2.53 3.274c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.97-.982zm4.844 0c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.969-.982z'
+        }
+    };
+    // 配置面板下拉里可选的全部平台（'other' = 无 logo，只显示文字）
+    const FOOTER_SOCIAL_PLATFORM_ORDER = ['whatsapp', 'telegram', 'twitter', 'linkedin', 'wechat', 'other'];
+    const FOOTER_SOCIAL_PLATFORM_NAMES = {
+        whatsapp: 'WhatsApp', telegram: 'Telegram', twitter: 'X (Twitter)',
+        linkedin: 'LinkedIn', wechat: '微信', other: '其他'
+    };
+
+    function footerSocialPlatformName(key) {
+        return FOOTER_SOCIAL_PLATFORM_NAMES[key] || FOOTER_SOCIAL_PLATFORM_NAMES.other;
+    }
+
+    // 兼容第五十七轮的老数据（只有 label 没有 platform）：按名称反推平台
+    function footerSocialPlatformFromLabel(label) {
+        let raw = String(label || '');
+        if (/微信|公众号|视频号/.test(raw)) return 'wechat';
+        if (/推特/.test(raw)) return 'twitter';
+        if (/领英/.test(raw)) return 'linkedin';
+        let k = raw.toLowerCase().replace(/[^a-z]/g, '');
+        if (!k) return '';
+        if (k === 'x' || k.indexOf('twitter') >= 0) return 'twitter';
+        if (k.indexOf('whatsapp') >= 0 || k === 'wa') return 'whatsapp';
+        if (k.indexOf('telegram') >= 0 || k === 'tg') return 'telegram';
+        if (k.indexOf('linkedin') >= 0) return 'linkedin';
+        if (k.indexOf('wechat') >= 0 || k.indexOf('weixin') >= 0) return 'wechat';
+        return '';
+    }
+
+    function normalizeSocialItem(s) {
+        s = s || {};
+        let p = String(s.platform || '').toLowerCase();
+        if (!FOOTER_SOCIAL_PLATFORMS[p]) p = footerSocialPlatformFromLabel(s.label) || 'other';
+        return { platform: p, label: String(s.label || ''), url: String(s.url || '') };
+    }
+
+    // 按平台 key 取图标；也接受旧调用（传名称）：先按 key 命中，再退回名称推断
+    function footerSocialIcon(platformOrLabel) {
+        let p = String(platformOrLabel || '').toLowerCase();
+        if (FOOTER_SOCIAL_PLATFORMS[p]) return FOOTER_SOCIAL_PLATFORMS[p];
+        p = footerSocialPlatformFromLabel(platformOrLabel);
+        return p ? FOOTER_SOCIAL_PLATFORMS[p] : null;
+    }
+
+    function getFooterConfig() {
+        let f = dashboardConfig.footer;
+        if (!f || typeof f !== 'object' || Array.isArray(f)) { f = {}; dashboardConfig.footer = f; }
+        if (f.enabled === undefined) f.enabled = true;
+        return f;
+    }
+
+    // 按语言取社媒列表：lang = 'en' | 'zh'（中文默认留空，配置项已预留）
+    function footerSocialList(lang) {
+        let f = getFooterConfig();
+        let isZh = (lang === 'zh');
+        let key = isZh ? 'socialsZh' : 'socialsEn';
+        // 兼容第五十七轮的老字段 socials（当时只有英文一组）
+        if (!isZh && !Array.isArray(f.socialsEn) && Array.isArray(f.socials)) {
+            f.socialsEn = f.socials;
+            delete f.socials;
+        }
+        if (!Array.isArray(f[key])) {
+            f[key] = (isZh ? FOOTER_SOCIAL_DEFAULT_ZH : FOOTER_SOCIAL_DEFAULT_EN)
+                .map(s => ({ platform: s.platform, label: s.label, url: s.url }));
+        }
+        return f[key];
+    }
+
+    // 第五十九轮：免责声明 / 联系方式里的网址与邮箱自动转超链接。
+    // 先按正则切分原文，非链接片段仍走 escapeHtml，链接片段单独转义后包 <a>，
+    // 因此用户自定义文案里写的 www.xxx.com、https://... 、name@mail.com 都会变成可点击链接。
+    // 末尾标点（句号/逗号/右括号）不吞进链接，避免 "（www.sxcoal.com）" 这类括号被算进 URL。
+    function linkifyFooterText(text) {
+        let s = String(text == null ? '' : text);
+        if (!s) return '';
+        // URL 主体只吃 ASCII（\u0080-\uFFFF 全部排除）：中文文案里网址后面紧跟「）」或逗号、
+        // 且没有空格分隔，若按 [^\s]+ 匹配会把整句中文都吞进链接里（实测踩过）。
+        // 再用一次尾部标点修剪，处理 "（www.sxcoal.com）" 这类包裹括号。
+        let re = /((?:https?:\/\/|www\.)[^\s\u0080-\uFFFF<>]+|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
+        let out = '', last = 0, m;
+        while ((m = re.exec(s)) !== null) {
+            let tok = m[0].replace(/["'.,;:!?)\]}]+$/, '');
+            if (!tok) { re.lastIndex++; continue; }
+            out += escapeHtml(s.slice(last, m.index));
+            let href = /^https?:\/\//i.test(tok) ? tok : (/^www\./i.test(tok) ? 'https://' + tok : 'mailto:' + tok);
+            out += `<a class="footer-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(tok)}</a>`;
+            last = m.index + tok.length;
+        }
+        out += escapeHtml(s.slice(last));
+        return out;
+    }
+
+    // 页脚渲染：语言切换 / 数据刷新 / 导出都会重跑（挂在 renderCharts 末尾）
+    function renderDashboardFooter() {
+        let host = document.getElementById('dashboardFooter');
+        if (!host) return;
+        let f = getFooterConfig();
+        if (f.enabled === false) { host.innerHTML = ''; host.classList.remove('has-social'); return; }
+        let isEn = window.currentLang === 'en';
+        let title = (isEn ? (f.titleEn || 'Disclaimer') : (f.titleZh || '免责声明'));
+        let body = (isEn ? (f.bodyEn || FOOTER_TEXT_EN) : (f.bodyZh || FOOTER_TEXT_ZH));
+        let contact = (isEn ? (f.contactEn || FOOTER_CONTACT_EN) : (f.contactZh || FOOTER_CONTACT_ZH));
+        let qrUrl = (f.qrUrl === undefined || f.qrUrl === null) ? FOOTER_DEFAULT_QR : f.qrUrl;
+        let qrLabel = isEn ? (f.qrLabelEn || 'Sxcoal App') : (f.qrLabelZh || 'Sxcoal APP 下载');
+        // 社媒链接：独立成中间栏（垂直居中于页脚空白区），两列「logo + 名称」网格；
+        // 中英各取各的列表（中文默认空 → 该栏自动隐藏，页脚回落成两栏）
+        let socialHtml = '';
+        let socialList = footerSocialList(isEn ? 'en' : 'zh')
+            .map(normalizeSocialItem)
+            .filter(s => s.url);
+        if (socialList.length) {
+            socialHtml = '<div class="footer-social-col"><div class="footer-social">' + socialList.map(s => {
+                let ic = FOOTER_SOCIAL_PLATFORMS[s.platform];
+                let ico = ic
+                    ? `<span class="fs-ico" style="background:${ic.color};"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#FFFFFF" d="${ic.path}"></path></svg></span>`
+                    : '';
+                // 名称留空 = 纯 logo 模式（悬停用平台名做 tooltip）
+                let name = s.label || (ic ? footerSocialPlatformName(s.platform) : '');
+                let txt = s.label ? `<span class="fs-name">${escapeHtml(s.label)}</span>` : '';
+                return `<a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(name)}">` +
+                    ico + txt + `</a>`;
+            }).join('') + '</div></div>';
+        }
+        // has-social：有社媒时中等宽度走「声明通栏 + 社媒/二维码同排」（见对应媒体查询）
+        host.classList.toggle('has-social', !!socialHtml);
+        let contactHtml = String(contact || '').split('\n').map(l => l.trim()).filter(l => l).map(l => linkifyFooterText(l)).join('<br>');
+        host.innerHTML =
+            `<div class="footer-main">` +
+                `<div class="footer-title">${escapeHtml(title)}</div>` +
+                (body ? `<p class="footer-body">${linkifyFooterText(body)}</p>` : '') +
+                (contactHtml ? `<p class="footer-contact">${contactHtml}</p>` : '') +
+            `</div>` +
+            socialHtml +
+            (qrUrl ? `<div class="footer-qr"><img src="${escapeHtml(qrUrl)}" alt="Sxcoal App"><div class="footer-qr-label">${escapeHtml(qrLabel)}</div></div>` : '');
+    }
+
+    // ---- 全局设置弹窗里的页脚配置行 ----
+    // 第五十八轮：每行 = 平台下拉 + 显示名称 + 链接，中英两组共用（suffix = 'En' | 'Zh'）
+    function footerSocialHostId(suffix) {
+        return suffix === 'Zh' ? 'footerSocialRowsZh' : 'footerSocialRowsEn';
+    }
+
+    function buildFooterSocialRowHtml(s) {
+        s = normalizeSocialItem(s);
+        let opts = FOOTER_SOCIAL_PLATFORM_ORDER.map(k =>
+            `<option value="${k}"${k === s.platform ? ' selected' : ''}>${escapeHtml(footerSocialPlatformName(k))}</option>`
+        ).join('');
+        return `<select class="fs-platform" title="平台" style="flex:0 0 92px; width:92px; padding:4px 6px; font-size:12px;">${opts}</select>` +
+            `<input type="text" class="fs-label" placeholder="名称（留空=只显示 logo）" value="${escapeHtml(s.label || '')}" style="flex:1 1 36%; width:auto; min-width:0; padding:4px 6px; font-size:12px;">` +
+            `<input type="text" class="fs-url" placeholder="链接 URL" value="${escapeHtml(s.url || '')}" style="flex:1 1 52%; width:auto; min-width:0; padding:4px 6px; font-size:12px;">` +
+            `<span class="fs-del" title="删除" style="cursor:pointer; color:#EF4444; font-size:14px; padding:0 4px; flex:0 0 auto;">✖</span>`;
+    }
+
+    function bindFooterSocialRowDeletes() {
+        ['En', 'Zh'].forEach(sfx => {
+            let host = document.getElementById(footerSocialHostId(sfx));
+            if (!host) return;
+            host.querySelectorAll('.fs-del').forEach(btn => {
+                btn.onclick = () => { let r = btn.closest('.fs-row'); if (r) { r.remove(); refreshFooterItemSummaries(); } };
+            });
+        });
+    }
+
+    function renderFooterSocialRows() {
+        [['En', footerSocialList('en')], ['Zh', footerSocialList('zh')]].forEach(pair => {
+            let host = document.getElementById(footerSocialHostId(pair[0]));
+            if (!host) return;
+            host.innerHTML = pair[1].map(s =>
+                `<div class="local-filter-row fs-row" style="margin-bottom:6px; gap:6px;">${buildFooterSocialRowHtml(s)}</div>`
+            ).join('');
+        });
+        bindFooterSocialRowDeletes();
+        refreshFooterItemSummaries();
+    }
+
+    function addFooterSocialRow(suffix) {
+        let host = document.getElementById(footerSocialHostId(suffix));
+        if (!host) return;
+        let div = document.createElement('div');
+        div.className = 'local-filter-row fs-row';
+        div.style.cssText = 'margin-bottom:6px; gap:6px;';
+        div.innerHTML = buildFooterSocialRowHtml({ platform: 'other', label: '', url: '' });
+        host.appendChild(div);
+        bindFooterSocialRowDeletes();
+        let nameInput = div.querySelector('.fs-label');
+        if (nameInput) setTimeout(() => { try { nameInput.focus(); } catch (e) {} }, 0);
+        refreshFooterItemSummaries();
+    }
+
+    function collectFooterSocialRows(suffix) {
+        let host = document.getElementById(footerSocialHostId(suffix));
+        if (!host) return null;
+        let out = [];
+        host.querySelectorAll('.fs-row').forEach(r => {
+            let sel = r.querySelector('.fs-platform');
+            let label = (r.querySelector('.fs-label') || {}).value || '';
+            let url = (r.querySelector('.fs-url') || {}).value || '';
+            // 只要填了 URL 就收录：名称留空 = 页脚只显示 logo
+            if (!url.trim()) return;
+            out.push({ platform: sel ? sel.value : 'other', label: label.trim(), url: url.trim() });
+        });
+        return out;
+    }
+
+    // ---- 页脚配置项：默认只显示一行摘要，点击该行才展开编辑 ----
+    function ftTruncate(s, n) {
+        s = String(s || '').replace(/\s+/g, ' ').trim();
+        return s.length > n ? s.slice(0, n) + '…' : s;
+    }
+
+    function footerSummaryFor(key, item) {
+        let inp = item ? item.querySelector('.fi-edit input, .fi-edit textarea') : null;
+        let raw = inp ? String(inp.value || '').trim() : '';
+        switch (key) {
+            case 'titleZh': return raw || '免责声明（使用官方默认文案）';
+            case 'titleEn': return raw || 'Disclaimer（使用官方默认文案）';
+            case 'bodyZh': return ftTruncate(raw || FOOTER_TEXT_ZH, 38);
+            case 'bodyEn': return ftTruncate(raw || FOOTER_TEXT_EN, 46);
+            case 'contactZh': return ftTruncate((raw || FOOTER_CONTACT_ZH).split('\n').join(' / '), 38);
+            case 'contactEn': return ftTruncate((raw || FOOTER_CONTACT_EN).split('\n').join(' / '), 46);
+            case 'qrUrl': return raw ? ftTruncate(raw, 42) : '使用官方默认二维码';
+            case 'socialsEn':
+            case 'socialsZh': {
+                let host = document.getElementById(footerSocialHostId(key === 'socialsZh' ? 'Zh' : 'En'));
+                let labels = host
+                    ? Array.prototype.slice.call(host.querySelectorAll('.fs-row')).map(r => {
+                        let lab = ((r.querySelector('.fs-label') || {}).value || '').trim();
+                        if (lab) return lab;
+                        // 名称留空 = 纯 logo，摘要用平台名代替
+                        let url = ((r.querySelector('.fs-url') || {}).value || '').trim();
+                        let sel = r.querySelector('.fs-platform');
+                        return (url && sel) ? footerSocialPlatformName(sel.value) : '';
+                    }).filter(Boolean)
+                    : [];
+                if (labels.length) return labels.join(' · ');
+                return key === 'socialsZh' ? '暂无（中文版页脚不显示社媒栏）' : '暂无';
+            }
+        }
+        return '';
+    }
+
+    function refreshFooterItemSummaries() {
+        let list = document.getElementById('footerItemList');
+        if (!list) return;
+        list.querySelectorAll('.footer-item').forEach(item => {
+            let valEl = item.querySelector('.fi-val');
+            if (valEl) valEl.textContent = footerSummaryFor(item.getAttribute('data-fkey'), item);
+        });
+    }
+
+    function toggleFooterItem(rowEl) {
+        let item = rowEl && rowEl.closest ? rowEl.closest('.footer-item') : null;
+        if (!item) return;
+        let edit = item.querySelector('.fi-edit');
+        let willOpen = !item.classList.contains('open');
+        // 一次只展开一项，避免设置弹窗被撑得过长
+        let list = document.getElementById('footerItemList');
+        if (list) {
+            list.querySelectorAll('.footer-item.open').forEach(o => {
+                if (o !== item) {
+                    o.classList.remove('open');
+                    let e2 = o.querySelector('.fi-edit');
+                    if (e2) e2.style.display = 'none';
+                }
+            });
+        }
+        item.classList.toggle('open', willOpen);
+        if (edit) edit.style.display = willOpen ? '' : 'none';
+        if (willOpen) {
+            let inp = edit && edit.querySelector('input, textarea');
+            if (inp) setTimeout(() => { try { inp.focus(); } catch (e) {} }, 0);
+        }
+        refreshFooterItemSummaries();
+    }
+
+    function bindFooterItemListEvents() {
+        let list = document.getElementById('footerItemList');
+        if (!list || list.__summaryBound) return;
+        list.__summaryBound = true;
+        // 输入时实时刷新摘要（含动态增删的社媒行，靠事件委托覆盖）
+        list.addEventListener('input', () => refreshFooterItemSummaries());
+    }
+
+    function fillFooterConfigUI() {
+        let f = getFooterConfig();
+        let set = (id, v) => { let el = document.getElementById(id); if (el) el.value = v || ''; };
+        let chk = document.getElementById('gFooterEnabled');
+        if (chk) {
+            chk.checked = f.enabled !== false;
+            let bodyEl = document.getElementById('footerCfgBody');
+            if (bodyEl) bodyEl.style.display = chk.checked ? '' : 'none';
+            chk.onchange = () => { let b = document.getElementById('footerCfgBody'); if (b) b.style.display = chk.checked ? '' : 'none'; };
+        }
+        // 第五十八轮：默认文案直接填进输入框（与「图表来源」一致）——用户打开就能看到内容并直接改，
+        // 而不是留空靠 placeholder；留空仍会在渲染时回退到官方默认文案（兼容老模板）。
+        set('gFooterTitleZh', f.titleZh || '免责声明');
+        set('gFooterTitleEn', f.titleEn || 'Disclaimer');
+        set('gFooterBodyZh', f.bodyZh || FOOTER_TEXT_ZH);
+        set('gFooterBodyEn', f.bodyEn || FOOTER_TEXT_EN);
+        set('gFooterContactZh', f.contactZh || FOOTER_CONTACT_ZH);
+        set('gFooterContactEn', f.contactEn || FOOTER_CONTACT_EN);
+        set('gFooterQrUrl', f.qrUrl === undefined ? '' : f.qrUrl);
+        renderFooterSocialRows();
+        bindFooterItemListEvents();
+        refreshFooterItemSummaries();
+        let note = document.getElementById('footerCfgNote');
+        if (note) {
+            note.textContent = (window.currentLang === 'en')
+                ? 'The fields are pre-filled with the official default copy — edit them as you like. Clearing the QR code URL falls back to the official QR. Social links are shown per language.'
+                : '各字段已预填官方默认文案，可直接修改；二维码地址留空则用官方二维码。社媒按中英文分别配置。';
+        }
+    }
+
+    function saveFooterConfigFromUI() {
+        let f = getFooterConfig();
+        let val = (id) => { let el = document.getElementById(id); return el ? el.value.trim() : ''; };
+        let chk = document.getElementById('gFooterEnabled');
+        if (chk) f.enabled = !!chk.checked;
+        ['titleZh', 'titleEn', 'bodyZh', 'bodyEn', 'contactZh', 'contactEn', 'qrUrl'].forEach(k => {
+            let id = 'gFooter' + k.charAt(0).toUpperCase() + k.slice(1);
+            // qrUrl 留空 => 回退官方二维码（存 undefined 语义）
+            let v = val(id);
+            if (k === 'qrUrl') f.qrUrl = v === '' ? undefined : v;
+            else f[k] = v;
+        });
+        let sEn = collectFooterSocialRows('En');
+        if (sEn) f.socialsEn = sEn;
+        let sZh = collectFooterSocialRows('Zh');
+        if (sZh) f.socialsZh = sZh;
+        delete f.socials;
+    }
+
+    // 恢复默认：清掉全部自定义字段（渲染时回退官方默认文案），社媒回到英文 6 项 / 中文空
+    function resetFooterConfig() {
+        let f = getFooterConfig();
+        ['titleZh', 'titleEn', 'bodyZh', 'bodyEn', 'contactZh', 'contactEn'].forEach(k => { f[k] = ''; });
+        f.qrUrl = undefined;
+        f.socialsEn = FOOTER_SOCIAL_DEFAULT_EN.map(s => ({ platform: s.platform, label: s.label, url: s.url }));
+        f.socialsZh = FOOTER_SOCIAL_DEFAULT_ZH.map(s => ({ platform: s.platform, label: s.label, url: s.url }));
+        delete f.socials;
+        fillFooterConfigUI();
+    }
+
     function renderCharts() {
         let container = document.getElementById('chartGrid');
         Object.values(chartInstances).forEach(chart => { if (chart && !chart.isDisposed()) chart.dispose(); });
@@ -3164,7 +3741,8 @@
         let parts = [];
         dashboardConfig.charts.forEach(cConfig => { parts.push(buildChartWrapperHtml(cConfig)); });
         container.innerHTML = parts.join('');
-        
+        try { renderDashboardFooter(); } catch (e) { console.warn('页脚渲染失败', e); }
+
         setTimeout(() => {
             dashboardConfig.charts.forEach(c => {
                 try { renderSingleChart(c.id); } 
@@ -4704,6 +5282,118 @@
     // 标签、引导线、对齐方式全部保持 ECharts 默认（alignTo:'none'，labelLine 15/15），
     // 绝不改 label/labelLine —— 第三十~三十二轮引导线被拉长即源于改动了它们。
     // 半径每次都从固定基准（饼 65% / 环 70%）重新计算，幂等，不从当前 radius 反推。
+    //
+    // 第五十一轮（手机窄屏标签被裁）：外侧标签的文字是从锚点向外延伸的，
+    // 右侧标签（如 "Thermal Power" 88px）没超过 label.width=100 就不会断行，
+    // 于是越过 canvas 右边界被直接裁掉（只剩 "Thermal Powe"）。而左侧的
+    // "Hydro-electric Power"(118px) 因为超宽触发了断行反而完整。
+    // 这里改为：按容器"单侧实际可用宽度"给类别名做词边界断行（连字符优先作断点），
+    // 使右侧也能像左侧一样自动折行；该侧本来就放得下时一字不动（桌面端/放大弹层不受影响）。
+    // labelLine / alignTo 仍然保持 ECharts 默认，绝不触碰。
+    let __pieMeasureCtx = null;
+    function getPieMeasureCtx() {
+        if (__pieMeasureCtx) return __pieMeasureCtx;
+        try {
+            let cv = document.createElement('canvas');
+            let ctx = cv.getContext && cv.getContext('2d');
+            if (ctx) {
+                ctx.font = '12px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+                __pieMeasureCtx = ctx;
+            }
+        } catch (e) {}
+        return __pieMeasureCtx;
+    }
+
+    // 单个 token 本身超宽 → 逐字符兜底断行（保证绝不被画布裁掉）
+    function splitPieLabelByChars(text, maxW, ctx) {
+        let out = [], buf = '';
+        for (let ch of String(text)) {
+            let t = buf + ch;
+            if (buf && ctx.measureText(t).width > maxW) {
+                // 连字符不允许单独成行（"Hydro-" 宁可多占 2px 也留在上一行尾部）
+                if (ch === '-') { out.push(buf + ch); buf = ''; }
+                else { out.push(buf); buf = ch; }
+            } else buf = t;
+        }
+        if (buf) out.push(buf);
+        return out;
+    }
+
+    // 按可用宽度折行：空格优先，其次连字符后（"Hydro-electric" → "Hydro-" / "electric"）
+    function wrapPieLabelText(text, maxW) {
+        let ctx = getPieMeasureCtx();
+        let s = String(text == null ? '' : text);
+        if (!ctx || !(maxW > 0)) return s;
+        if (ctx.measureText(s).width <= maxW) return s;
+        let tokens = [];
+        s.split(/\s+/).forEach(w => {
+            if (!w) return;
+            // 避免 lookbehind（部分老 WebView 不支持）：手动在连字符后断开并保留连字符
+            let segs = w.split('-');
+            segs.forEach((p, i) => { let t = (i < segs.length - 1) ? (p + '-') : p; if (t) tokens.push(t); });
+        });
+        if (!tokens.length) return s;
+        let lines = [], cur = '';
+        let joinTok = (a, b) => (/[-]$/.test(a) ? a + b : a + ' ' + b);
+        tokens.forEach(tk => {
+            let tkWide = ctx.measureText(tk).width > maxW;
+            if (!cur) {
+                if (tkWide) lines = lines.concat(splitPieLabelByChars(tk, maxW, ctx));
+                else cur = tk;
+                return;
+            }
+            if (!tkWide && ctx.measureText(joinTok(cur, tk)).width <= maxW) { cur = joinTok(cur, tk); return; }
+            lines.push(cur); cur = '';
+            if (tkWide) lines = lines.concat(splitPieLabelByChars(tk, maxW, ctx));
+            else cur = tk;
+        });
+        if (cur) lines.push(cur);
+        return lines.join('\n');
+    }
+
+    // 依容器尺寸把饼/环类别名折行（幂等：原始名存在 __plainName，反复调用不会叠加换行）
+    function fitPieLabelsToWidth(s, el) {
+        try {
+            if (!s || s.type !== 'pie' || !el || !el.clientWidth || !el.clientHeight) return;
+            let data = s.data || [];
+            if (!data.length) return;
+            let ctx = getPieMeasureCtx();
+            if (!ctx) return;
+            let W = el.clientWidth, H = el.clientHeight;
+            let half = Math.min(W, H) / 2;
+            let outerPct = Array.isArray(s.radius) ? parseFloat(s.radius[1]) : parseFloat(s.radius);
+            if (!(half > 0) || !(outerPct > 0)) return;
+            let baseWidth = (s.label && s.label.width) ? Number(s.label.width) : 100;
+            if (!(baseWidth > 0)) baseWidth = 100;
+            let anchorOffset = outerPct / 100 * half + 35;   // 引导线两段 15+15 + distanceToLabelLine 5
+            let total = 0;
+            data.forEach(d => { total += Math.abs(Number(d && d.value) || 0); });
+            if (!(total > 0)) return;
+            let acc = 0;
+            data.forEach(d => {
+                if (!d || d.name == null) return;
+                let orig = (typeof d.__plainName === 'string' && d.__plainName)
+                    ? d.__plainName
+                    : String(d.name).replace(/\s*\n\s*/g, ' ');
+                d.__plainName = orig;
+                let v = Math.abs(Number(d.value) || 0);
+                let mid = acc + v / 2; acc += v;
+                // 扇区中点角度（0 = 正上方，顺时针），sin 即水平分量：>0 右侧、<0 左侧
+                let sx = Math.sin(mid / total * Math.PI * 2);
+                let natural = wrapPieLabelText(orig, baseWidth);   // 等价于 ECharts 按 label.width 的折行
+                if (Math.abs(sx) < 0.15) { d.name = natural; return; }   // 顶部/底部标签水平居中，空间充足
+                let isRight = sx > 0;
+                let anchorX = isRight ? (W / 2 + anchorOffset) : (W / 2 - anchorOffset);
+                // 该侧的可用宽度（留 1px 余量；两侧都不得越出画布）
+                let avail = (isRight ? (W - anchorX) : anchorX) - 1;
+                if (!(avail > 0)) { d.name = natural; return; }
+                let widest = 0;
+                natural.split('\n').forEach(ln => { widest = Math.max(widest, ctx.measureText(ln).width); });
+                d.name = (widest <= avail) ? natural : wrapPieLabelText(orig, avail);
+            });
+        } catch (e) {}
+    }
+
     function pieLabelBudget(data) {
         // 外侧标签的水平预算：最长类别名的实测宽；label.width=100 会把更宽的名字断行，这里钳到 100
         try {
@@ -4755,6 +5445,8 @@
                 if (pct === null) return;
                 let isRing = Array.isArray(s.radius) && parseFloat(s.radius[0]) > 0;
                 s.radius = pieRadiusPatchFor(isRing, pct);
+                // 第五十一轮：半径定下后，按新的可用宽度把过长的类别名折行（窄屏右侧标签防裁切）
+                fitPieLabelsToWidth(s, el);
                 hasPie = true;
             });
             try { if (el.id) { if (hasPie) __pieChartIds[el.id] = 1; else delete __pieChartIds[el.id]; } } catch (e) {}
@@ -4773,12 +5465,22 @@
                 let opt = inst.getOption();
                 if (!opt || !Array.isArray(opt.series) || !opt.series.some(s => s && s.type === 'pie')) return;
                 let patch = [], touched = false;
+                let labelPatch = null;
                 opt.series.forEach(s => {
                     if (!s || s.type !== 'pie') { patch.push({}); return; }
                     let pct = pieOuterPctFor(s, el);
                     if (pct === null) { patch.push({}); return; }
                     let isRing = Array.isArray(s.radius) && parseFloat(s.radius[0]) > 0;
-                    patch.push({ radius: pieRadiusPatchFor(isRing, pct) });
+                    let item = { radius: pieRadiusPatchFor(isRing, pct) };
+                    // 第五十一轮：容器宽度变化后同步重算标签折行（旋屏/退出横屏/弹层开合）
+                    let before = (s.data || []).map(d => (d ? d.name : null)).join('\u0001');
+                    fitPieLabelsToWidth(s, el);
+                    let after = (s.data || []).map(d => (d ? d.name : null)).join('\u0001');
+                    if (before !== after) {
+                        item.data = (s.data || []).map(d => Object.assign({}, d, { name: d ? d.name : undefined }));
+                        labelPatch = true;
+                    }
+                    patch.push(item);
                     touched = true;
                 });
                 if (touched) inst.setOption({ series: patch });
@@ -5312,7 +6014,9 @@
 
             let allSubValues = [];
             seriesList.forEach(s => allSubValues.push(...s.data));
-            let niceMin = isPercent ? null : computeNiceMin(allSubValues);
+            // 第六十一轮：堆积图（含横向多系列堆叠）Y 轴基线必须为 0 —— 堆叠总量只该影响轴上限，
+            // 若按单值/堆叠总量做 niceMin 收缩，轴会从 3 万起步，堆叠段底部被整段截掉（用户截图反馈）
+            let niceMin = (isPercent || shouldStack) ? null : computeNiceMin(allSubValues);
             if(isHorizontal) {
                 // 横向分类标签：按最长 label 宽度反推 grid.left，避免省份名被截断。
                 // （外层 yLabelPad 已按相同公式计算：Math.max(110, Math.min(230, maxLabelPx + 24))）
@@ -5464,10 +6168,13 @@
         try {
             if (!config.type.startsWith('percent-')) {
                 let axisIsHorizontal = config.type.includes('horizontal');
+                let allSeries0 = Array.isArray(option.series) ? option.series : [];
+                // 第六十一轮：存在堆叠系列时整块跳过 —— 堆叠总量进入 vals0 会把轴最小值抬到
+                // 数千/数万级，堆积柱底部被截断；堆积图 Y 轴必须保持 0 基线
+                let hasStackSeries = allSeries0.some(s => s && s.stack);
                 let stackedSums = {};
                 let vals0 = [];
-                let allSeries = Array.isArray(option.series) ? option.series : [];
-                allSeries.forEach(s => {
+                if (!hasStackSeries) allSeries0.forEach(s => {
                     if (!s || (s.yAxisIndex || 0) !== 0 || !Array.isArray(s.data)) return;
                     let isBandLower = (s.name === HIST_RANGE_LOWER || s.name === STAT_BAND_LOWER);
                     s.data.forEach((d, i) => {
@@ -6823,11 +7530,17 @@ function applyChartAnalyticsI18N() {
         // 指定时间/日期主维度列控件已移除（系统由 detectDateColumnFromData 自动识别，且手动选择对 Dim 数据无意义）。
         document.getElementById('gTitleZh').value = dashboardConfig.dashTitleZh || ''; document.getElementById('gTitleEn').value = dashboardConfig.dashTitleEn || '';
         document.getElementById('gMetaZh').value = dashboardConfig.dashMetaZh || ''; document.getElementById('gMetaEn').value = dashboardConfig.dashMetaEn || '';
+        // 第四十八轮：全盘默认来源 —— 未配置时显示当前系统默认文案（用户可直接在此基础上编辑）
+        document.getElementById('gSourceZh').value = dashboardConfig.dashSourceZh || getGlobalSource('zh');
+        document.getElementById('gSourceEn').value = dashboardConfig.dashSourceEn || getGlobalSource('en');
         // 自定义综述留空时，自动填入当前生成的默认综述内容
         let defaultSummary = document.getElementById('executiveSummary')?.innerHTML || '';
         document.getElementById('gSummaryZh').value = dashboardConfig.dashSummaryZh || (window.currentLang === 'zh' ? defaultSummary : '');
         document.getElementById('gSummaryEn').value = dashboardConfig.dashSummaryEn || (window.currentLang === 'en' ? defaultSummary : '');
+        // 第六十一轮：数据卡片期次文本 —— 已配置显示配置值，未配置预填数据自动生成的当前文案
+        try { fillKpiPeriodConfigUI(); } catch (e) {}
         applyGlobalSettingsI18N();
+        fillFooterConfigUI();
         openModal('globalSettingsModal');
     }
 
@@ -6843,6 +7556,22 @@ function applyChartAnalyticsI18N() {
         setText('unitMapTitle', t.unitMapTitle);
         setText('unitMapHint', t.unitMapHint);
         setText('unitMapAddBtn', t.unitMapAddBtn);
+        // 第四十八轮：全盘默认来源区文案
+        setText('globalSourceLabel', t.globalSourceLabel);
+        setText('globalSourceHint', t.globalSourceHint);
+        // 第五十六轮：页脚配置区文案（uiText 未定义时回退中文默认）
+        let _isEn = window.currentLang === 'en';
+        // 第六十一轮：数据卡片期次文本区文案
+        setText('kpiPeriodCfgTitle', t.kpiPeriodCfgTitle || (_isEn ? 'KPI card period text (bilingual - auto-generated when empty)' : '数据卡片期次文本（双语 - 留空按数据自动生成）'));
+        setText('kpiPeriodCfgHint', t.kpiPeriodCfgHint || (_isEn ? 'Row 1 shows when a card is locked to the latest period; row 2 shows for YTD cumulative (or a cumulative field with latest period). Pre-filled with the auto text from current data; cards without their own period text follow these.' : '卡片「时间范围」为最新一期时显示第一行；当年累计、或数据字段为累计列时显示第二行（年初至最新）。打开弹窗时已按当前数据预填默认文案，可直接修改；卡片未单独设置期次文本时跟随这里。'));
+        setText('footerCfgTitle', t.footerCfgTitle || (_isEn ? 'Dashboard footer (disclaimer / contact / QR)' : '仪表盘页脚（免责声明 / 联系方式 / 二维码）'));
+        setText('footerCfgHint', t.footerCfgHint || (_isEn ? 'The footer sits at the bottom of the dashboard and is included in exported images and exported HTML. Fields are pre-filled with the official default copy.' : '页脚固定在看板最底部，导出图片与导出 HTML 都会带上；各字段已预填官方默认文案，可直接修改。'));
+        setText('footerEnabledLabel', t.footerEnabledLabel || (_isEn ? 'Show the footer at the bottom' : '在看板底部显示页脚'));
+        setText('footerSocialHint', t.footerSocialHint || (_isEn ? 'Social entries shown in the English footer; the platform picker decides which logo is used. Leave the name empty for a logo-only entry ("Other" shows text only).' : '英文版页脚显示的社媒入口；「平台」决定用哪个 logo，名称留空则只显示 logo（平台选“其他”则只显示文字）。'));
+        setText('footerSocialHintZh', t.footerSocialHintZh || (_isEn ? 'Social entries shown in the Chinese footer (empty by default).' : '中文版页脚显示的社媒入口（默认留空，例如微信公众号、视频号）。'));
+        setText('footerSocialAddBtn', t.footerSocialAddBtn || (_isEn ? '＋ Add social link' : '＋ 添加社媒链接'));
+        setText('footerSocialAddBtnZh', t.footerSocialAddBtnZh || (_isEn ? '＋ Add social link' : '＋ 添加社媒链接'));
+        setText('footerResetBtn', t.footerResetBtn || (_isEn ? 'Restore default copy' : '恢复默认文案'));
     }
 
     // ===== 数值单位双语映射（第四十四轮）=====
@@ -6901,7 +7630,7 @@ function applyChartAnalyticsI18N() {
             <input type="text" class="um-en" placeholder="${isEn ? 'EN unit' : '英文单位'}" style="width:24%;">
             <select class="um-op" style="width:12%;"><option value="div" selected>÷</option><option value="mul">×</option></select>
             <input type="number" step="any" min="0" class="um-factor" placeholder="${isEn ? 'factor' : '数值'}" style="width:20%;">
-            <button type="button" class="remove-btn" style="flex:0 0 auto; margin-left:4px;" title="${isEn ? 'Remove' : '移除'}" onclick="this.parentNode.remove()">✖</button>`;
+            <button type="button" class="remove-btn" style="position:static; flex:0 0 auto; margin-left:4px; font-size:11px; color:#EF4444; cursor:pointer; background:none; border:none; padding:0 2px;" title="${isEn ? 'Remove' : '移除'}" onclick="this.parentNode.remove()">✖</button>`;
         container.appendChild(row);
         row.querySelector('.um-name').focus();
     }
@@ -6937,6 +7666,235 @@ function applyChartAnalyticsI18N() {
     }
     function removeSlicer(field) { dashboardConfig.slicers = dashboardConfig.slicers.filter(s => s.field !== field); applyFilterContext(); }
 
+    // ============ 第五十轮：KPI 卡片「自定义期次文本」智能默认值 ============
+    // 规则（用户口径）：
+    //   A. 数据字段=当月/当日/最新值 + 时间范围=最新一期        → 对应颗粒度的最新时间（7月 / Jul）
+    //   B. 数据字段=累计类     + 时间范围=最新一期              → 当年至今区间（1-7月 / Jan-Jul）
+    //   C. 数据字段非累计      + 时间范围=当年累计               → 当年至今区间（1-7月 / Jan-Jul）
+    //   D. 时间范围=全量 / 自定义                                → 对应颗粒度的时间范围
+    // 默认值是"预填真实值"：打开弹窗即填好，点上去不会被清空，仍允许用户自由编辑。
+
+    /** 字段名是否表达"累计 / 年初至今"口径 */
+    function isCumulativeFieldName(name) {
+        let s = String(name || '');
+        if (!s) return false;
+        return /累计|累积|年初至今|年内|全年|总计|小计|YTD|MTD|cumulative|cum\.|year[\s-]?to[\s-]?date/i.test(s);
+    }
+
+    /** 字段名是否表达"当期最新值"口径（累计字段不算） */
+    function isCurrentPeriodFieldName(name) {
+        let s = String(name || '');
+        if (!s || isCumulativeFieldName(s)) return false;
+        return /当月|当日|本期|当前|最新|本月|本日|本季|本年|current|latest|spot|monthly|daily/i.test(s);
+    }
+
+    const __KPI_MONTH_ABBR_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    /** 把解析出的期次归一到事实表的真实颗粒度（"2026-07-01"在月度表里就是 2026 年 7 月） */
+    function normalizeToGranularity(c, g) {
+        if (!c) return null;
+        if (g === 'month') {
+            if (c.kind === 'day' || c.kind === 'month') return { y: c.y, m: c.m || 1, kind: 'month' };
+            if (c.kind === 'quarter') return { y: c.y, m: Math.min(12, (c.q || 1) * 3), kind: 'month' };
+            return { y: c.y, m: 12, kind: 'month' };
+        }
+        if (g === 'quarter') {
+            if (c.kind === 'quarter') return { y: c.y, q: c.q || 1, kind: 'quarter' };
+            if (c.kind === 'month' || c.kind === 'day') return { y: c.y, q: Math.max(1, Math.min(4, Math.ceil((c.m || 1) / 3))), kind: 'quarter' };
+            return { y: c.y, q: 4, kind: 'quarter' };
+        }
+        if (g === 'week') return (c.kind === 'week') ? c : { y: c.y, w: 1, kind: 'week' };
+        if (g === 'day') return (c.kind === 'day') ? c : { y: c.y, m: c.m || 1, d: c.d || 1, kind: 'day' };
+        return { y: c.y, kind: 'year' };
+    }
+
+    function formatPeriodPointZh(c) {
+        if (!c) return '';
+        if (c.kind === 'quarter') return (c.q || 1) + '季度';
+        if (c.kind === 'week') return '第' + (c.w || 1) + '周';
+        if (c.kind === 'day') return (c.m || 1) + '月' + (c.d || 1) + '日';
+        if (c.kind === 'month') return (c.m || 1) + '月';
+        return String(c.y) + '年';
+    }
+    function formatPeriodPointEn(c) {
+        if (!c) return '';
+        if (c.kind === 'quarter') return 'Q' + (c.q || 1);
+        if (c.kind === 'week') return 'W' + String(c.w || 1).padStart(2, '0');
+        if (c.kind === 'day') return __KPI_MONTH_ABBR_EN[(c.m || 1) - 1] + ' ' + (c.d || 1);
+        if (c.kind === 'month') return __KPI_MONTH_ABBR_EN[(c.m || 1) - 1];
+        return String(c.y);
+    }
+    function formatPeriodRangeZh(a, b) {
+        if (!a || !b) return '';
+        let same = a.y === b.y;
+        if (a.kind === 'year') return same ? (a.y + '年') : (a.y + '-' + b.y + '年');
+        if (a.kind === 'quarter') return same ? ((a.q || 1) + '-' + (b.q || 1) + '季度') : (a.y + '年Q' + (a.q || 1) + '-' + b.y + '年Q' + (b.q || 1));
+        if (a.kind === 'week') return same ? ('第' + (a.w || 1) + '-' + (b.w || 1) + '周') : (a.y + '年第' + (a.w || 1) + '周-' + b.y + '年第' + (b.w || 1) + '周');
+        if (a.kind === 'day') return same ? ((a.m || 1) + '月' + (a.d || 1) + '日-' + (b.m || 1) + '月' + (b.d || 1) + '日') : (a.y + '年' + (a.m || 1) + '月' + (a.d || 1) + '日-' + b.y + '年' + (b.m || 1) + '月' + (b.d || 1) + '日');
+        return same ? ((a.m || 1) + '-' + (b.m || 1) + '月') : (a.y + '年' + (a.m || 1) + '月-' + b.y + '年' + (b.m || 1) + '月');
+    }
+    function formatPeriodRangeEn(a, b) {
+        if (!a || !b) return '';
+        let same = a.y === b.y;
+        if (a.kind === 'year') return same ? String(a.y) : (a.y + '-' + b.y);
+        if (a.kind === 'quarter') return same ? ('Q' + (a.q || 1) + '-Q' + (b.q || 1)) : (a.y + ' Q' + (a.q || 1) + ' - ' + b.y + ' Q' + (b.q || 1));
+        if (a.kind === 'week') return same ? ('W' + String(a.w || 1).padStart(2, '0') + '-W' + String(b.w || 1).padStart(2, '0')) : (a.y + ' W' + (a.w || 1) + ' - ' + b.y + ' W' + (b.w || 1));
+        if (a.kind === 'day') return same ? (__KPI_MONTH_ABBR_EN[(a.m || 1) - 1] + ' ' + (a.d || 1) + ' - ' + __KPI_MONTH_ABBR_EN[(b.m || 1) - 1] + ' ' + (b.d || 1)) : (__KPI_MONTH_ABBR_EN[(a.m || 1) - 1] + ' ' + (a.d || 1) + ', ' + a.y + ' - ' + __KPI_MONTH_ABBR_EN[(b.m || 1) - 1] + ' ' + (b.d || 1) + ', ' + b.y);
+        return same ? (__KPI_MONTH_ABBR_EN[(a.m || 1) - 1] + '-' + __KPI_MONTH_ABBR_EN[(b.m || 1) - 1]) : (__KPI_MONTH_ABBR_EN[(a.m || 1) - 1] + ' ' + a.y + ' - ' + __KPI_MONTH_ABBR_EN[(b.m || 1) - 1] + ' ' + b.y);
+    }
+
+    // 事实表期次上下文（颗粒度 / 首期 / 最新期），按 rawData 身份缓存
+    let __kpiPeriodCtxWeak = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+    function getFactPeriodContext() {
+        try {
+            let rows = (typeof rawData !== 'undefined' && Array.isArray(rawData)) ? rawData : null;
+            let xf = (typeof dateColumn !== 'undefined') ? dateColumn : '';
+            if (!rows || !rows.length || !xf) return null;
+            if (__kpiPeriodCtxWeak) {
+                let hit = __kpiPeriodCtxWeak.get(rows);
+                if (hit && hit.xf === xf) return hit;
+            }
+            let g = getDateGranularity(rows, xf) || 'month';
+            let seen = Object.create(null), list = [];
+            for (let i = 0; i < rows.length; i++) {
+                let v = rows[i][xf];
+                if (v === null || v === undefined || v === '') continue;
+                let s = String(v);
+                if (seen[s]) continue;
+                seen[s] = 1;
+                let c = parsePeriodKey(s, xf);
+                if (c) list.push({ ord: periodSortKey(c), c: c });
+            }
+            if (!list.length) return null;
+            list.sort((a, b) => a.ord - b.ord);
+            let ctx = {
+                g: g, xf: xf,
+                first: normalizeToGranularity(list[0].c, g),
+                last: normalizeToGranularity(list[list.length - 1].c, g),
+                periods: list.length
+            };
+            if (__kpiPeriodCtxWeak) __kpiPeriodCtxWeak.set(rows, ctx);
+            return ctx;
+        } catch (e) { return null; }
+    }
+
+    /** 依据 数据字段语义 + 时间范围 + 事实表颗粒度，生成双语默认期次文本 */
+    function buildKpiPeriodTextDefault(fieldName, timeScope, customStart, customEnd) {
+        try {
+            let ctx = getFactPeriodContext();
+            if (!ctx || !ctx.last) return null;
+            let g = ctx.g, last = ctx.last;
+            let scope = timeScope || 'latest';
+            let ytdStart = (g === 'month') ? { y: last.y, m: 1, kind: 'month' }
+                : (g === 'day') ? { y: last.y, m: 1, d: 1, kind: 'day' }
+                    : (g === 'quarter') ? { y: last.y, q: 1, kind: 'quarter' }
+                        : (g === 'week') ? { y: last.y, w: 1, kind: 'week' }
+                            : { y: last.y, kind: 'year' };
+
+            // B / C：当年累计区间
+            if (scope === 'ytd' || (scope === 'latest' && isCumulativeFieldName(fieldName))) {
+                return { zh: formatPeriodRangeZh(ytdStart, last), en: formatPeriodRangeEn(ytdStart, last) };
+            }
+            // A：最新期次（对应颗粒度的最新时间点）
+            if (scope === 'latest') {
+                return { zh: formatPeriodPointZh(last), en: formatPeriodPointEn(last) };
+            }
+            // D-1：自定义单点
+            if (scope === 'custom-point' && customStart) {
+                let c = normalizeToGranularity(parsePeriodKey(customStart, ctx.xf), g);
+                if (c) return { zh: formatPeriodPointZh(c), en: formatPeriodPointEn(c) };
+            }
+            // D-2：自定义区间
+            if (scope === 'custom-range' && (customStart || customEnd)) {
+                let c1 = normalizeToGranularity(parsePeriodKey(customStart || customEnd, ctx.xf), g);
+                let c2 = normalizeToGranularity(parsePeriodKey(customEnd || customStart, ctx.xf), g);
+                if (c1 && c2) {
+                    let lo = periodSortKey(c1) <= periodSortKey(c2) ? c1 : c2;
+                    let hi = periodSortKey(c1) <= periodSortKey(c2) ? c2 : c1;
+                    return { zh: formatPeriodRangeZh(lo, hi), en: formatPeriodRangeEn(lo, hi) };
+                }
+            }
+            // D-3：全量 → 事实表首期至最新期
+            return { zh: formatPeriodRangeZh(ctx.first, ctx.last), en: formatPeriodRangeEn(ctx.first, ctx.last) };
+        } catch (e) { return null; }
+    }
+
+    // 第六十一轮：数据卡片期次文本的全盘默认层。
+    // 优先级：卡片自定义文案 > 全局配置(dashboardConfig.kpiPeriodText) > 按数据自动生成 > 系统兜底文案。
+    // 口径判定与 buildKpiPeriodTextDefault 一致：时间范围=当年累计，或（最新一期 + 累计类字段）→ ytd；最新一期且非累计 → latest。
+    function getKpiPeriodMode(kpi) {
+        if (!kpi) return null;
+        if (kpi.timeScope === 'ytd') return 'ytd';
+        if (kpi.timeScope === 'latest') return isCumulativeFieldName(kpi.field) ? 'ytd' : 'latest';
+        return null;
+    }
+    function getGlobalKpiPeriodText(mode, isEn) {
+        let gpt = dashboardConfig.kpiPeriodText;
+        if (!gpt || !mode) return '';
+        return String((mode === 'ytd' ? (isEn ? gpt.ytdEn : gpt.ytdZh) : (isEn ? gpt.latestEn : gpt.latestZh)) || '').trim();
+    }
+    /** 全局设置弹窗预填/保存比较用的自动默认（mode: 'latest' | 'ytd'） */
+    function getKpiPeriodAutoDefault(mode) {
+        return buildKpiPeriodTextDefault('', mode === 'ytd' ? 'ytd' : 'latest', '', '');
+    }
+    /** 打开全局设置弹窗时回填：已配置的显示配置值，未配置的预填当前数据自动生成的文案（可直接改） */
+    function fillKpiPeriodConfigUI() {
+        let gpt = dashboardConfig.kpiPeriodText || {};
+        let autoL = getKpiPeriodAutoDefault('latest') || { zh: '', en: '' };
+        let autoY = getKpiPeriodAutoDefault('ytd') || { zh: '', en: '' };
+        let isEn = window.currentLang === 'en';
+        let set = (id, val, auto) => {
+            let el = document.getElementById(id);
+            if (!el) return;
+            // 预填真实值：已配置显示配置值，未配置预填自动生成的当前文案（点上去不会被清空，可直接改）
+            el.value = String(val || auto || '');
+            if (auto) el.placeholder = (isEn ? 'Default: ' : '默认：') + auto;
+        };
+        set('gKpiLatestZh', gpt.latestZh, autoL.zh);
+        set('gKpiLatestEn', gpt.latestEn, autoL.en);
+        set('gKpiYtdZh', gpt.ytdZh, autoY.zh);
+        set('gKpiYtdEn', gpt.ytdEn, autoY.en);
+    }
+
+    // 记住上一次自动生成的值：只有"用户没改过"的输入框才会被刷新，改过的保持用户内容
+    let __kpiAutoPeriodText = { zh: '', en: '' };
+
+    /** 把默认期次文本同步进弹窗输入框。force=true 时无条件覆盖（新建时用） */
+    function syncKpiPeriodTextDefault(force) {
+        try {
+            let zEl = document.getElementById('kpiCustomTextZh');
+            let eEl = document.getElementById('kpiCustomTextEn');
+            if (!zEl) return;
+            let field = document.getElementById('kpiFieldSel').value;
+            let scope = document.getElementById('kpiTimeScopeSel').value;
+            let cs = document.getElementById('kpiCustomStart').value;
+            let ce = document.getElementById('kpiCustomEnd').value;
+            let def = buildKpiPeriodTextDefault(field, scope, cs, ce);
+            if (!def) return;
+            // 第六十一轮：全局已配置期次文本时，弹窗预填以全局值为准（卡片留空保存即跟随全局）
+            try {
+                let gpt = dashboardConfig.kpiPeriodText || {};
+                let mode = (scope === 'ytd' || (scope === 'latest' && isCumulativeFieldName(field))) ? 'ytd'
+                    : (scope === 'latest' ? 'latest' : null);
+                if (mode === 'ytd') {
+                    def.zh = String(gpt.ytdZh || '').trim() || def.zh;
+                    def.en = String(gpt.ytdEn || '').trim() || def.en;
+                } else if (mode === 'latest') {
+                    def.zh = String(gpt.latestZh || '').trim() || def.zh;
+                    def.en = String(gpt.latestEn || '').trim() || def.en;
+                }
+            } catch (eG) {}
+            let apply = (el, val, prev) => {
+                if (!el || !val) return;
+                let cur = String(el.value || '').trim();
+                if (force || !cur || cur === String(prev || '').trim()) el.value = val;
+            };
+            apply(zEl, def.zh, __kpiAutoPeriodText.zh);
+            apply(eEl, def.en, __kpiAutoPeriodText.en);
+            __kpiAutoPeriodText = { zh: def.zh, en: def.en };
+        } catch (e) {}
+    }
+
     function openKPIModal() {
         document.getElementById('editKpiId').value = '';
         document.getElementById('kpiModalTitle').textContent = '添加 KPI 数据卡片';
@@ -6947,6 +7905,9 @@ function applyChartAnalyticsI18N() {
         if (w0) w0.checked = false; if (d0) d0.checked = false;
         document.getElementById('kpiTimeScopeSel').value = 'latest';
         toggleCustomTime('kpi'); document.getElementById('kpiLocalFilters').innerHTML = '';
+        // 第五十轮：新建时按"数据字段 + 时间范围 + 事实表颗粒度"预填真实期次文本
+        __kpiAutoPeriodText = { zh: '', en: '' };
+        syncKpiPeriodTextDefault(true);
         refreshKpiRateOptions(); openModal('kpiModal');
     }
 
@@ -6965,6 +7926,9 @@ function applyChartAnalyticsI18N() {
         document.getElementById('kpiAggSel').value = kpi.agg;
         
         toggleCustomTime('kpi'); document.getElementById('kpiLocalFilters').innerHTML = '';
+        // 第五十轮：已有自定义文案的保持不动；为空的老卡片补一个真实默认期次文本
+        __kpiAutoPeriodText = { zh: '', en: '' };
+        syncKpiPeriodTextDefault(false);
         (kpi.localFilters || []).forEach(lf => addLocalFilterRow('kpiLocalFilters', lf.field, lf.values || lf.value, lf.agg || 'sum', lf.mode || 'aggregate'));
         setTimeout(() => {
             let rows = document.getElementById('kpiLocalFilters').querySelectorAll('.local-filter-row');
@@ -7019,11 +7983,17 @@ function applyChartAnalyticsI18N() {
 
     function saveKPI() {
         const id = document.getElementById('editKpiId').value || 'kpi_' + Date.now();
+        // 第六十一轮：期次文本与"当前生效默认"（自动生成 + 全局覆盖）一致时存空串 ——
+        // 卡片保持动态跟随全局/数据；只有用户真正改过的文案才作为卡片级自定义保存。
+        let _ctz = String(document.getElementById('kpiCustomTextZh').value || '').trim();
+        let _cte = String(document.getElementById('kpiCustomTextEn').value || '').trim();
+        if (_ctz && _ctz === String(__kpiAutoPeriodText.zh || '').trim()) _ctz = '';
+        if (_cte && _cte === String(__kpiAutoPeriodText.en || '').trim()) _cte = '';
         const config = {
             id: id, titleZh: document.getElementById('kpiTitleZh').value || '指标卡片', titleEn: document.getElementById('kpiTitleEn').value || '',
             field: document.getElementById('kpiFieldSel').value, timeScope: document.getElementById('kpiTimeScopeSel').value,
             customStart: document.getElementById('kpiCustomStart').value, customEnd: document.getElementById('kpiCustomEnd').value,
-            customTextZh: document.getElementById('kpiCustomTextZh').value, customTextEn: document.getElementById('kpiCustomTextEn').value,
+            customTextZh: _ctz, customTextEn: _cte,
             showMoM: document.getElementById('kpiShowMoM').checked, showYoY: document.getElementById('kpiShowYoY').checked,
             showWoW: (document.getElementById('kpiShowWoW') || {}).checked === true,
             showDoD: (document.getElementById('kpiShowDoD') || {}).checked === true,
@@ -7108,7 +8078,10 @@ function applyChartAnalyticsI18N() {
         document.getElementById('editChartId').value = c.id; document.getElementById('chartModalTitle').textContent = '编辑分析图表';
         document.getElementById('chartTitleZh').value = c.titleZh || c.title || ''; document.getElementById('chartTitleEn').value = c.titleEn || '';
         document.getElementById('chartNoteZh').value = c.noteZh || ''; document.getElementById('chartNoteEn').value = c.noteEn || '';
-        document.getElementById('chartSourceZh').value = c.sourceZh || ''; document.getElementById('chartSourceEn').value = c.sourceEn || '';
+        // 第四十八轮：来源预填为"当前生效的来源"（图表自定义 > 全盘默认 > 系统默认），
+        // 是真实值而非 placeholder —— 点进去不会被清空，用户可在此基础上直接编辑。
+        document.getElementById('chartSourceZh').value = c.sourceZh || getGlobalSource('zh') || '';
+        document.getElementById('chartSourceEn').value = c.sourceEn || getGlobalSource('en') || '';
         upgradeLegacyChartConfig(c);
         document.getElementById('chartTypeSel').value = (c.type === 'seasonal-lines' ? 'line' : c.type); document.getElementById('chartXSel').value = c.xField;
         toggleChartFields();
@@ -7166,7 +8139,9 @@ function applyChartAnalyticsI18N() {
         const config = {
             id: id, type: type, titleZh: document.getElementById('chartTitleZh').value || '自定义图表', titleEn: document.getElementById('chartTitleEn').value || '',
             noteZh: document.getElementById('chartNoteZh').value || '', noteEn: document.getElementById('chartNoteEn').value || '',
-            sourceZh: document.getElementById('chartSourceZh').value || '', sourceEn: document.getElementById('chartSourceEn').value || '',
+            // 第四十八轮：与全盘默认来源一致时存空串 → 保持"继承全局"，后续改全局该文件也跟着变
+            sourceZh: (function () { let v = (document.getElementById('chartSourceZh').value || '').trim(); return (v && v !== getGlobalSource('zh')) ? v : ''; })(),
+            sourceEn: (function () { let v = (document.getElementById('chartSourceEn').value || '').trim(); return (v && v !== getGlobalSource('en')) ? v : ''; })(),
             xField: document.getElementById('chartXSel').value,
             subField: document.getElementById('chartSubSel').value || null, yField: document.getElementById('chartYSel').value, 
             yField2: type === 'combo' ? document.getElementById('chartY2Sel').value : null, timeScope: document.getElementById('chartTimeScopeSel').value,
@@ -8020,7 +8995,7 @@ function applyChartAnalyticsI18N() {
         scheduleOverlayResizes();
     }
 
-    let SXCOAL_LOGO_URL = '';
+    const SXCOAL_LOGO_URL = 'https://fenwei-web-pro-1306768303.cos.ap-beijing.myqcloud.com/assets/img/imgCommon/logo_black.png';
     const SXCOAL_LOGO_DATA_URI = 'data:image/png;base64,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';
 
     function loadImageAsync(src) {
@@ -8056,6 +9031,14 @@ function applyChartAnalyticsI18N() {
         let opt = chart.getOption();
         opt.animation = false;
         opt.backgroundColor = '#ffffff';
+        // 第五十一轮：主图窄屏时给饼/环类别名折过行（防标签被裁）。下载/复制图是 520x310
+        // 画布局部重绘，宽度充足，这里还原成原始单行名（宽 520 下不会溢出）。
+        try {
+            (opt.series || []).forEach(s => {
+                if (!s || s.type !== 'pie' || !Array.isArray(s.data)) return;
+                s.data.forEach(d => { if (d && typeof d.__plainName === 'string' && d.__plainName) d.name = d.__plainName; });
+            });
+        } catch (e) {}
         // 下载图字号控制：默认 12，在 600x360 init + pixelRatio=2 输出 1200x720 后
         // 等效字号变成 24，让 X 轴标签"Dec 2024"看起来过大且与底部来源重叠（用户反馈 image1）。
         // 在 tempChart 里把 X/Y 轴字号降到 9（输出 18px）+ 隐藏重叠，避免拥挤。
@@ -8213,7 +9196,7 @@ function applyChartAnalyticsI18N() {
         try {
             let chartImg = await loadImageAsync(chartUrl);
             ctx.drawImage(chartImg, 0, 0);
-            let logoSrc = brandIdentity.logo || '';
+            let logoSrc = (SXCOAL_LOGO_DATA_URI && SXCOAL_LOGO_DATA_URI.startsWith('data:')) ? SXCOAL_LOGO_DATA_URI : SXCOAL_LOGO_URL;
             let logoImg = await loadImageAsync(logoSrc);
             // 3 个对角斜放的小 logo 水印，与仪表盘背景同款视觉；尺寸按参考图缩小并降低透明度
             ctx.save();
@@ -8294,6 +9277,191 @@ function applyChartAnalyticsI18N() {
     // 复制图表图片到剪贴板（与下载图同一排版与尺寸：510x300、标题13/其余字号10）
     function copyChartImage(chartId) {
         return downloadChartImage(chartId, true);
+    }
+
+    // ============ 第五十二轮：复制 / 下载整个仪表盘（整页截图）============
+    // 用 html2canvas 把 #dashboard（标题 + 综述 + 筛选 + KPI + 全部图表）渲染成一张 PNG。
+    // 顶栏 actionZone 在 #dashboard 之外，不会被截进图片，导出的是干净的看板本体。
+    function captureDashboardCanvas() {
+        return new Promise(async (resolve, reject) => {
+            let dash = document.getElementById('dashboard');
+            if (!dash) return reject(new Error('dashboard-not-found'));
+            if (typeof html2canvas !== 'function') return reject(new Error('html2canvas-not-loaded'));
+            // 临时移除跨域水印背景：避免 html2canvas 因跨域图片抛错或污染最终 canvas（toDataURL 报 SecurityError）
+            let prevWm = dash.style.getPropertyValue('--sxcoal-watermark-img');
+            dash.style.setProperty('--sxcoal-watermark-img', 'none');
+            // 第五十六轮：html2canvas 渲染 #dashboard 时，卡片间隙、边缘以及内容溢出区域
+            // 可能透出 body 背景（#F8F9FA 浅灰），表现为"整图背景色不统一、局部发灰"。
+            // 捕获期间把 body 背景临时钉成白色，捕获结束再还原。
+            let prevBodyBg = document.body.style.backgroundColor;
+            document.body.style.backgroundColor = '#FFFFFF';
+            // 第五十七轮根因修复：.dashboard 的 box-shadow(0 4px 6px -1px rgba(0,0,0,0.05))
+            // 会被 html2canvas 错误地画成"铺满整个元素区域的 5% 黑填充"（255×0.95=242），
+            // 于是卡片间隙、页脚、页面四边都泛出 #F2F2F2 灰底（卡片因自带不透明白底而看着正常）。
+            // 捕获期间临时禁用 box-shadow，捕获结束后还原。
+            let banishShadowStyle = document.createElement('style');
+            banishShadowStyle.textContent = '#dashboard, #dashboard * { box-shadow: none !important; }';
+            document.head.appendChild(banishShadowStyle);
+
+            let scale = Math.min(2, window.devicePixelRatio || 1);
+
+            let scrollX = window.scrollX || window.pageXOffset || 0;
+            let scrollY = window.scrollY || window.pageYOffset || 0;
+            window.scrollTo(0, 0);
+            await new Promise(r => requestAnimationFrame(r));
+
+            // 第五十五轮关键修复：html2canvas 会把 #dashboard 克隆进一个 iframe 再渲染。
+            // 若该 iframe 的视口宽度与原页面布局宽度不一致，@media (max-width:768px) 等
+            // 媒体查询在克隆文档里会得到不同结果 —— KPI 列数(210/140)、chart-container
+            // 高度(340/280)、.vis-grid 单列/双列、左右外边距(40/16) 全都会变，
+            // 于是"文字布局"与"图表"处于两套坐标体系，必然错位重叠。
+            // 手段一：把克隆文档视口钉死为当前布局宽度，保证媒体查询与原页面一致。
+            let layoutW = document.documentElement.clientWidth || window.innerWidth || 0;
+            let layoutH = document.documentElement.clientHeight || window.innerHeight || 0;
+
+            // 手段二（治本）：不再依赖坐标叠加，而是把每个 ECharts 画布原位换成同尺寸
+            // <img>，让 html2canvas 把图表当普通图片渲进布局里。图片随容器流动，
+            // 即使克隆文档发生轻微重排也永远跟容器对齐，不存在错位/黑色残影。
+            let swapped = [];
+            try {
+                if (window.echarts && typeof echarts.getInstanceByDom === 'function') {
+                    dash.querySelectorAll('.chart-container').forEach((el) => {
+                        let inst = null;
+                        try { inst = echarts.getInstanceByDom(el); } catch (e) {}
+                        if (!inst) return;
+                        let url = null;
+                        try {
+                            url = inst.getDataURL({
+                                type: 'png',
+                                pixelRatio: Math.max(2, scale),
+                                backgroundColor: '#FFFFFF'
+                            });
+                        } catch (e) { return; }
+                        if (!url) return;
+                        let img = document.createElement('img');
+                        img.src = url;
+                        img.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;width:100%;height:100%;z-index:5;display:block;';
+                        let prevPos = el.style.position;
+                        el.style.position = 'relative';
+                        // 隐藏 ECharts 自己生成的图层（多层 canvas），避免 html2canvas
+                        // 把它们渲染成黑块或半透明残影（用户截图里左侧的黑色圆形）
+                        Array.from(el.children).forEach((child) => {
+                            swapped.push({ node: child, prop: 'visibility', prev: child.style.visibility });
+                            child.style.visibility = 'hidden';
+                        });
+                        swapped.push({ node: el, prop: 'position', prev: prevPos });
+                        el.appendChild(img);
+                        swapped.push({ node: img, remove: true });
+                    });
+                }
+            } catch (e) { console.warn('[仪表盘截图] 图表快照替换失败：', e && e.message); }
+
+            function restoreDashboard() {
+                swapped.forEach((it) => {
+                    try {
+                        if (it.remove) {
+                            if (it.node.parentNode) it.node.parentNode.removeChild(it.node);
+                        } else {
+                            it.node.style[it.prop] = it.prev;
+                        }
+                    } catch (e) {}
+                });
+                swapped = [];
+                dash.style.setProperty('--sxcoal-watermark-img', prevWm);
+                document.body.style.backgroundColor = prevBodyBg;
+                try {
+                    if (banishShadowStyle && banishShadowStyle.parentNode) {
+                        banishShadowStyle.parentNode.removeChild(banishShadowStyle);
+                    }
+                } catch (e) {}
+                window.scrollTo(scrollX, scrollY);
+            }
+
+            // 用 try/catch 包住：即便截图库同步抛错，也一定执行 restoreDashboard，
+            // 避免临时注入的样式（禁 box-shadow、白底、去水印）残留在页面上。
+            let baseCanvas = null;
+            try {
+                baseCanvas = await html2canvas(dash, {
+                    backgroundColor: '#FFFFFF',
+                    scale: scale,
+                    useCORS: true,
+                    logging: false,
+                    windowWidth: layoutW,
+                    windowHeight: layoutH,
+                    scrollX: 0,
+                    scrollY: 0
+                });
+            } catch (err) {
+                restoreDashboard();
+                reject(err);
+                return;
+            }
+            restoreDashboard();
+            resolve(baseCanvas);
+        });
+    }
+
+    function dashImgMessages() {
+        let isEn = window.currentLang === 'en';
+        return {
+            capturing: isEn ? 'Generating dashboard image…' : '正在生成仪表盘图片…',
+            ok: isEn ? 'Dashboard image downloaded' : '仪表盘图片已下载',
+            copied: isEn ? 'Dashboard image copied to clipboard' : '仪表盘图片已复制到剪贴板',
+            fail: isEn ? 'Copy failed; downloaded instead' : '复制失败，已改为直接下载图片',
+            err: isEn ? 'Capture failed: screenshot library not loaded or images are cross-origin blocked. Retry online.' : '生成失败：截图组件未加载或图片跨域受限，请联网后重试'
+        };
+    }
+
+    function dashImgFileName() {
+        let base = sanitizeFileNamePart(
+            (window.currentLang === 'en' ? (dashboardConfig.dashTitleEn || 'dashboard') : (dashboardConfig.dashTitleZh || 'dashboard')),
+            'dashboard'
+        );
+        return `${base}_${new Date().toISOString().slice(0, 10)}.png`;
+    }
+
+    async function downloadDashboardImage() {
+        let msg = dashImgMessages();
+        showEmbedToast(msg.capturing);
+        try {
+            let canvas = await captureDashboardCanvas();
+            let url = canvas.toDataURL('image/png');
+            let link = document.createElement('a');
+            link.href = url; link.download = dashImgFileName(); link.click();
+            showEmbedToast(msg.ok);
+        } catch (e) {
+            console.error('[下载仪表盘]', e);
+            showEmbedToast(msg.err);
+        }
+    }
+
+    async function copyDashboardImage() {
+        let msg = dashImgMessages();
+        showEmbedToast(msg.capturing);
+        try {
+            let canvas = await captureDashboardCanvas();
+            let url = canvas.toDataURL('image/png');
+            if (!(navigator.clipboard && typeof window.ClipboardItem === 'function')) {
+                let link = document.createElement('a');
+                link.href = url; link.download = dashImgFileName(); link.click();
+                showEmbedToast(msg.fail);
+                return;
+            }
+            try {
+                let blob = dataUrlToPngBlob(url);
+                await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                showEmbedToast(msg.copied);
+            } catch (e) {
+                // 剪贴板写入被拒（非 HTTPS / 无权限 / 浏览器不支持）：回退为直接下载，保证点击一定有结果
+                console.warn('[复制仪表盘] 剪贴板写入失败，回退下载：', e && e.message);
+                let link = document.createElement('a');
+                link.href = url; link.download = dashImgFileName(); link.click();
+                showEmbedToast(msg.fail);
+            }
+        } catch (e) {
+            console.error('[复制仪表盘]', e);
+            showEmbedToast(msg.err);
+        }
     }
 
     // ============ 单图嵌入代码：导出独立 HTML，可粘贴到 Notion / Confluence / 博客 / PPT 等 ============
@@ -8395,7 +9563,7 @@ function generateChartEmbedCode(chartId) {
         let note = isEn ? (config.noteEn || '') : (config.noteZh || '');
         let notePrefix = isEn ? 'Note: ' : '备注: ';
         let sourceText = note ? `${notePrefix}${note}    ${source}` : source;
-        let langText = isEn ? `Embed · ${getBrandName()} Chart` : `嵌入图表 · ${getBrandName()}`;
+        let langText = isEn ? 'Embed · Sxcoal Chart' : '嵌入图表 · Sxcoal';
 
         // 字体规范：Source Sans 3 用于拉丁字符/数字，Noto Sans SC 用于中文（思源黑体 normal 替代）。
         // 必须定义在函数最顶部、所有引用之前，避免 const TDZ（"Cannot access 'EMBED_FONT_FAMILY' before initialization"）。
@@ -8673,7 +9841,7 @@ function generateChartEmbedCode(chartId) {
         let closeTitle = isEn ? 'Close' : '关闭';
 
         // logoUrl：水印和右下角小 logo 都用同一条 URL；不走 data URI 避免嵌入页代码膨胀
-        let logoUrl = brandIdentity.logo || '';
+        let logoUrl = SXCOAL_LOGO_URL || 'https://fenwei-web-pro-1306768303.cos.ap-beijing.myqcloud.com/assets/img/imgCommon/logo_black.png';
 
         let html = `<!DOCTYPE html>
 <html lang="${isEn ? 'en' : 'zh-CN'}">
@@ -8810,7 +9978,7 @@ body {
     <div id="mainChart" class="chart"></div>
     <div class="footnote">
       <div class="left"${isEn ? ' style="font-style:italic;"' : ''}>${escapeHtml(sourceText)}</div>
-    <div class="right"><img alt="${escapeHtml(getBrandName())}" src="${logoUrl}"></div>
+      <div class="right"><img alt="Sxcoal" src="${logoUrl}"></div>
     </div>
   </div>
 </div>
@@ -8828,7 +9996,7 @@ body {
     <div id="zoomChart" class="chart-z"></div>
     <div class="footer">
       <div class="left"${isEn ? ' style="font-style:italic;"' : ''}>${escapeHtml(sourceText)}</div>
-    <div class="right"><img alt="${escapeHtml(getBrandName())}" src="${logoUrl}"></div>
+      <div class="right"><img alt="Sxcoal" src="${logoUrl}"></div>
     </div>
   </div>
 </div>
@@ -9028,11 +10196,17 @@ function applyFmt2(opt) {
     opt.tooltip = Object.assign({}, opt.tooltip, { valueFormatter: fmt2 });
   }
 }
+var NL=String.fromCharCode(10);
+var __pieMeasureCtx=null;
+function getPieMeasureCtx(){if(__pieMeasureCtx)return __pieMeasureCtx;try{var cv=document.createElement('canvas');var ctx=cv.getContext&&cv.getContext('2d');if(ctx){ctx.font='12px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';__pieMeasureCtx=ctx;}}catch(e){}return __pieMeasureCtx;}
+function splitPieLabelByChars(text,maxW,ctx){var out=[],buf='';for(var i=0;i<text.length;i++){var ch=text.charAt(i);var t=buf+ch;if(buf&&ctx.measureText(t).width>maxW){if(ch==='-'){out.push(buf+ch);buf='';}else{out.push(buf);buf=ch;}}else{buf=t;}}if(buf)out.push(buf);return out;}
+function wrapPieLabelText(text,maxW){var ctx=getPieMeasureCtx();var s=String(text==null?'':text);if(!ctx||!(maxW>0))return s;if(ctx.measureText(s).width<=maxW)return s;var tokens=[];s.split(NL).join(' ').split(' ').forEach(function(w){if(!w)return;var segs=w.split('-');segs.forEach(function(p,i){var t=(i<segs.length-1)?(p+'-'):p;if(t)tokens.push(t);});});if(!tokens.length)return s;var lines=[],cur='';var joinTok=function(a,b){return (/[-]$/.test(a)?a+b:a+' '+b);};tokens.forEach(function(tk){var tkWide=ctx.measureText(tk).width>maxW;if(!cur){if(tkWide)lines=lines.concat(splitPieLabelByChars(tk,maxW,ctx));else cur=tk;return;}if(!tkWide&&ctx.measureText(joinTok(cur,tk)).width<=maxW){cur=joinTok(cur,tk);return;}lines.push(cur);cur='';if(tkWide)lines=lines.concat(splitPieLabelByChars(tk,maxW,ctx));else cur=tk;});if(cur)lines.push(cur);return lines.join(NL);}
+function fitPieLabelsToWidth(s,el){try{if(!s||s.type!=='pie'||!el||!el.clientWidth||!el.clientHeight)return;var data=s.data||[];if(!data.length)return;var ctx=getPieMeasureCtx();if(!ctx)return;var W=el.clientWidth,H=el.clientHeight;var half=Math.min(W,H)/2;var outerPct=Array.isArray(s.radius)?parseFloat(s.radius[1]):parseFloat(s.radius);if(!(half>0)||!(outerPct>0))return;var baseWidth=(s.label&&s.label.width)?Number(s.label.width):100;if(!(baseWidth>0))baseWidth=100;var anchorOffset=outerPct/100*half+35;var total=0;data.forEach(function(d){total+=Math.abs(Number(d&&d.value)||0);});if(!(total>0))return;var acc=0;data.forEach(function(d){if(!d||d.name==null)return;var orig=(typeof d.__plainName==='string'&&d.__plainName)?d.__plainName:String(d.name).split(NL).join(' ');d.__plainName=orig;var v=Math.abs(Number(d.value)||0);var mid=acc+v/2;acc+=v;var sx=Math.sin(mid/total*Math.PI*2);var natural=wrapPieLabelText(orig,baseWidth);if(Math.abs(sx)<0.15){d.name=natural;return;}var isRight=sx>0;var anchorX=isRight?(W/2+anchorOffset):(W/2-anchorOffset);var avail=(isRight?(W-anchorX):anchorX)-1;if(!(avail>0)){d.name=natural;return;}var widest=0;natural.split(NL).forEach(function(ln){widest=Math.max(widest,ctx.measureText(ln).width);});d.name=(widest<=avail)?natural:wrapPieLabelText(orig,avail);});}catch(e){}}
 function pieLabelBudget(data){try{var cv=document.createElement('canvas');var ctx=cv.getContext&&cv.getContext('2d');if(ctx){ctx.font='12px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';var w=0;(data||[]).forEach(function(d){if(d&&d.name)w=Math.max(w,ctx.measureText(String(d.name)).width);});if(w>0)return Math.min(100,Math.ceil(w));}}catch(e){}return 100;}
 function pieOuterPctFor(s,el){try{var W=(el&&el.clientWidth)||0,H=(el&&el.clientHeight)||0;if(!W||!H)return null;var isRing=Array.isArray(s.radius)&&parseFloat(s.radius[0])>0;var base=isRing?70:65;var half=Math.min(W,H)/2;if(half<=0)return null;var outerPx=base/100*half;var sideNeed=pieLabelBudget(s.data)+15+15+5+8;if(W/2-outerPx>=sideNeed)return base;var pct=Math.round((W/2-sideNeed)/half*1000)/10;return Math.max(38,Math.min(base,pct));}catch(e){return null;}}
 function pieRadiusPatchFor(isRing,pct){return isRing?[(Math.round(pct*45/7)/10)+'%',pct+'%']:['0%',pct+'%'];}
-function applyPieRadiusShrink(opt,el){try{if(!opt||!Array.isArray(opt.series)||!el||!el.clientWidth||!el.clientHeight)return opt;opt.series.forEach(function(s){if(!s||s.type!=='pie')return;var pct=pieOuterPctFor(s,el);if(pct===null)return;var isRing=Array.isArray(s.radius)&&parseFloat(s.radius[0])>0;s.radius=pieRadiusPatchFor(isRing,pct);});return opt;}catch(e){return opt;}}
-function retunePieInst(c){try{if(!c||(c.isDisposed&&c.isDisposed()))return;var el=c.getDom?c.getDom():null;if(!el||!el.clientWidth||!el.clientHeight)return;var opt=c.getOption();if(!opt||!Array.isArray(opt.series)||!opt.series.some(function(x){return x&&x.type==='pie';}))return;var patch=[],touched=false;opt.series.forEach(function(s){if(!s||s.type!=='pie'){patch.push({});return;}var pct=pieOuterPctFor(s,el);if(pct===null){patch.push({});return;}var isRing=Array.isArray(s.radius)&&parseFloat(s.radius[0])>0;patch.push({radius:pieRadiusPatchFor(isRing,pct)});touched=true;});if(touched)c.setOption({series:patch});}catch(e){}}
+function applyPieRadiusShrink(opt,el){try{if(!opt||!Array.isArray(opt.series)||!el||!el.clientWidth||!el.clientHeight)return opt;opt.series.forEach(function(s){if(!s||s.type!=='pie')return;var pct=pieOuterPctFor(s,el);if(pct===null)return;var isRing=Array.isArray(s.radius)&&parseFloat(s.radius[0])>0;s.radius=pieRadiusPatchFor(isRing,pct);fitPieLabelsToWidth(s,el);});return opt;}catch(e){return opt;}}
+function retunePieInst(c){try{if(!c||(c.isDisposed&&c.isDisposed()))return;var el=c.getDom?c.getDom():null;if(!el||!el.clientWidth||!el.clientHeight)return;var opt=c.getOption();if(!opt||!Array.isArray(opt.series)||!opt.series.some(function(x){return x&&x.type==='pie';}))return;var patch=[],touched=false;opt.series.forEach(function(s){if(!s||s.type!=='pie'){patch.push({});return;}var pct=pieOuterPctFor(s,el);if(pct===null){patch.push({});return;}var isRing=Array.isArray(s.radius)&&parseFloat(s.radius[0])>0;var item={radius:pieRadiusPatchFor(isRing,pct)};var before=(s.data||[]).map(function(d){return d?d.name:null;}).join('||');fitPieLabelsToWidth(s,el);var after=(s.data||[]).map(function(d){return d?d.name:null;}).join('||');if(before!==after)item.data=(s.data||[]).map(function(d){return Object.assign({},d,{name:d?d.name:undefined});});patch.push(item);touched=true;});if(touched)c.setOption({series:patch});}catch(e){}}
 function init(el) {
   let opt = (typeof ECHART_OPTION === 'string') ? JSON.parse(ECHART_OPTION) : ECHART_OPTION;
   applyFmt2(opt);
@@ -9182,7 +10356,7 @@ function downloadChartPng(inZoom) {
   let yUnitName = '';
   if (Array.isArray(opt.yAxis)) { for (let _ya of opt.yAxis) { if (_ya && _ya.name) { yUnitName = String(_ya.name).trim(); break; } } }
   let liveTitle = (typeof EMBED_TITLE !== 'undefined') ? EMBED_TITLE : '';
-    let sourceText = (typeof EMBED_SOURCE !== 'undefined') ? EMBED_SOURCE : '${escapeHtml(getBrandSource('en'))}';
+  let sourceText = (typeof EMBED_SOURCE !== 'undefined') ? EMBED_SOURCE : 'Source: Sxcoal';
 
   opt.title = [{
     text: liveTitle, left: 'center', top: 20,
@@ -9356,7 +10530,7 @@ function downloadChartPng(inZoom) {
       };
       logo.onload = function () { drawSourceAndLogo(true, logo); };
       logo.onerror = function () { drawSourceAndLogo(false, null); };
-    logo.src = (typeof EMBED_LOGO !== 'undefined') ? EMBED_LOGO : '';
+      logo.src = (typeof EMBED_LOGO !== 'undefined') ? EMBED_LOGO : 'https://fenwei-web-pro-1306768303.cos.ap-beijing.myqcloud.com/assets/img/imgCommon/logo_black.png';
     };
     chartImg.onerror = function () {
 
@@ -9388,7 +10562,7 @@ function downloadChartPng(inZoom) {
       };
       logoImg.onload = function () { drawFallback(true); };
       logoImg.onerror = function () { drawFallback(false); };
-    logoImg.src = (typeof EMBED_LOGO !== 'undefined') ? EMBED_LOGO : '';
+      logoImg.src = (typeof EMBED_LOGO !== 'undefined') ? EMBED_LOGO : 'https://fenwei-web-pro-1306768303.cos.ap-beijing.myqcloud.com/assets/img/imgCommon/logo_black.png';
     };
     if (url) {
       chartImg.src = url;
@@ -10573,6 +11747,81 @@ function setupOverlaySwipe() {
         return sanitizeFileNamePart(title, 'Sxcoal Analytics') + '_' + langSuffix + '_' + dateStr + '.html';
     }
 
+    // ============ 第五十轮：导出页元信息（description / keywords）============
+    /** 把综述（可能含 HTML 标签）转成纯文本，用于 meta 内容 */
+    function getExportPlainText(html) {
+        let s = String(html == null ? '' : html);
+        if (!s) return '';
+        try {
+            let d = document.createElement('div');
+            d.innerHTML = s.replace(/<br\s*\/?>/gi, ' ').replace(/<\/(p|div|li|h[1-6]|tr)>/gi, ' ');
+            s = d.textContent || d.innerText || '';
+        } catch (e) {
+            s = s.replace(/<[^>]*>/g, ' ');
+        }
+        return s.replace(/\s+/g, ' ').trim();
+    }
+
+    /** 取指定语言下生效的全盘综述：优先自定义，其次当前页面上自动生成的综述 */
+    function getEffectiveSummaryText(lang) {
+        try {
+            let custom = (lang === 'en') ? (dashboardConfig.dashSummaryEn || '') : (dashboardConfig.dashSummaryZh || '');
+            if (String(custom).trim()) return String(custom);
+            if ((window.currentLang || 'zh') === lang) {
+                let box = document.getElementById('executiveSummary');
+                if (box) return box.innerHTML || box.textContent || '';
+            }
+        } catch (e) {}
+        return '';
+    }
+
+    // 名词性代表词/词组词典 [中文, English]。中英文各自从对应语言的大标题与全盘综述中提取。
+    const EXPORT_KEYWORD_LEXICON = [
+        ['煤炭', 'Coal'], ['原煤', 'Raw Coal'], ['动力煤', 'Thermal Coal'], ['炼焦煤', 'Coking Coal'],
+        ['焦煤', 'Coking Coal'], ['无烟煤', 'Anthracite'], ['褐煤', 'Lignite'], ['喷吹煤', 'PCI Coal'],
+        ['洗精煤', 'Washed Coal'], ['焦炭', 'Coke'], ['煤种', 'Coal Type'], ['煤价', 'Coal Price'],
+        ['进口量', 'Import Volume'], ['进口', 'Import'], ['出口', 'Export'], ['产量', 'Output'],
+        ['产能', 'Capacity'], ['港口库存', 'Port Inventory'], ['库存', 'Inventory'], ['需求', 'Demand'],
+        ['供应', 'Supply'], ['供给', 'Supply'], ['消费', 'Consumption'], ['均价', 'Average Price'],
+        ['价格', 'Price'], ['市场', 'Market'], ['行情', 'Market Trend'], ['趋势', 'Trend'],
+        ['动态', 'Dynamics'], ['分析', 'Analysis'], ['统计', 'Statistics'], ['预测', 'Forecast'],
+        ['数据', 'Data'], ['报告', 'Report'], ['同比', 'YoY'], ['环比', 'MoM'], ['累计', 'Cumulative'],
+        ['增长', 'Growth'], ['下降', 'Decline'], ['中国', 'China'], ['印尼', 'Indonesia'],
+        ['澳大利亚', 'Australia'], ['俄罗斯', 'Russia'], ['蒙古', 'Mongolia'], ['南非', 'South Africa'],
+        ['哥伦比亚', 'Colombia'], ['美国', 'United States'], ['加拿大', 'Canada'], ['越南', 'Vietnam'],
+        ['菲律宾', 'Philippines'], ['电力', 'Power'], ['发电量', 'Power Generation'], ['水电', 'Hydropower'],
+        ['风电', 'Wind Power'], ['光伏', 'Solar Power'], ['核电', 'Nuclear Power'], ['火电', 'Thermal Power'],
+        ['能源', 'Energy'], ['新能源', 'Renewable Energy'], ['钢铁', 'Steel'], ['水泥', 'Cement'],
+        ['化工', 'Chemical'], ['冶金', 'Metallurgy'], ['海关总署', 'GACC'], ['国家统计局', 'NBS'],
+        ['月度', 'Monthly'], ['季度', 'Quarterly'], ['年度', 'Annual'], ['万吨', '10k tonnes'], ['亿吨', '100M tonnes']
+    ];
+
+    function escapeRegExpText(s) { return String(s == null ? '' : s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+    /** 从「仪表盘大标题 + 全盘综述」中提取名词性代表词/词组（同语言） */
+    function buildExportKeywords(lang) {
+        try {
+            let isEn = (lang === 'en');
+            let titlePlain = getExportPlainText(isEn ? (dashboardConfig.dashTitleEn || '') : (dashboardConfig.dashTitleZh || ''));
+            let summaryPlain = getExportPlainText(getEffectiveSummaryText(lang));
+            let text = (titlePlain + ' ' + summaryPlain).trim();
+            if (!text) return [];
+            let out = [];
+            let push = (v) => { v = String(v || '').trim(); if (v && out.indexOf(v) < 0) out.push(v); };
+            EXPORT_KEYWORD_LEXICON.forEach(pair => {
+                let probe = isEn ? pair[1] : pair[0];
+                if (!probe) return;
+                let hit = isEn
+                    ? new RegExp('(^|[^A-Za-z])' + escapeRegExpText(probe), 'i').test(text)
+                    : text.indexOf(probe) >= 0;
+                if (hit) push(probe);
+            });
+            // 大标题本身就是一个完整的名词性词组，整体保留
+            if (titlePlain) push(titlePlain);
+            return out.slice(0, 15);
+        } catch (e) { return []; }
+    }
+
     async function doExportStaticHTML(secOpts) {
         secOpts = secOpts || { mode: 'obf' };
         const uploadBox = document.getElementById('upload-container');
@@ -10627,6 +11876,22 @@ function setupOverlaySwipe() {
             ['#upload-container', '#actionZone', '#builderToolbar', '#dropZone', '#fileInput', '#templateInput'].forEach(sel => {
                 exportRoot.querySelectorAll(sel).forEach(el => { if (el.parentNode) el.parentNode.removeChild(el); });
             });
+
+            // 第五十轮：导出页 <head> 写入 description（= 全盘综述）与 keywords（大标题 + 综述里提取的名词性词/词组）
+            try {
+                const exportHead = exportRoot.querySelector('head');
+                if (exportHead) {
+                    const mkMeta = (name, content) => {
+                        if (!content) return;
+                        const m = exportRoot.ownerDocument.createElement('meta');
+                        m.setAttribute('name', name);
+                        m.setAttribute('content', content);
+                        exportHead.appendChild(m);
+                    };
+                    mkMeta('description', getExportPlainText(getEffectiveSummaryText(exportLang)));
+                    mkMeta('keywords', buildExportKeywords(exportLang).join(', '));
+                }
+            } catch (e) { console.warn('[导出] 元信息写入失败：', e); }
 
             // 去除导出文件里的备注（第十轮用户反馈；第 23 轮加强：删除全部注释，不再只删含中文的）：
             // 1) HTML 注释节点 —— cloneNode 会保留 Comment 节点，outerHTML 会原样带出；
@@ -10913,3 +12178,4 @@ function setupOverlaySwipe() {
 </script>
 </body>
 </html>
+
