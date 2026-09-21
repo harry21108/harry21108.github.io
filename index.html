@@ -478,6 +478,12 @@
         /* 窄屏不铺满整行：两列紧贴靠左，避免两列被拉开显得松散 */
         .footer-social { gap: 10px 16px; width: max-content; }
         .footer-qr img { width: 76px; height: 76px; }
+        /* 第六十五轮：窄屏推广位参照页脚社媒栏的解法——不再左右并排，改为上下堆叠。
+           按钮白空格 nowrap 且不参与收缩，横向布局时会把文本列挤成一字一行；
+           堆叠后文本独占整行，按钮另起一行靠左，边距与页脚对齐（16px）。 */
+        .dashboard-promo { flex-direction: column; align-items: flex-start; gap: 14px; margin: 20px 16px 0; padding: 16px 18px; }
+        .dashboard-promo .promo-title { font-size: 16.5px; }
+        .dashboard-promo.promo-image { padding: 10px; }
         .modal-content { width: 95%; padding: 16px; }
         #chartOverlayContent { width: 100vw !important; height: 100vh !important; max-width: none !important; max-height: none !important; border-radius: 0 !important; }
         .landscape #chartOverlayContainer { height: calc(100vh - 60px) !important; }
@@ -9531,7 +9537,7 @@ function applyChartAnalyticsI18N() {
             let fallbackDownload = () => {
                 let link = document.createElement('a');
                 link.href = url;
-                link.download = `${title}_${new Date().toISOString().slice(0, 10)}.png`;
+                link.download = `${title}_${getDataFileSuffix()}.png`;
                 link.click();
                 showEmbedToast(_tImg.copyFail || '复制失败，已改为直接下载图片');
             };
@@ -9546,7 +9552,7 @@ function applyChartAnalyticsI18N() {
         }
         let link = document.createElement('a');
         link.href = url;
-        link.download = `${title}_${new Date().toISOString().slice(0, 10)}.png`;
+        link.download = `${title}_${getDataFileSuffix()}.png`;
         link.click();
         return url;
     }
@@ -9702,7 +9708,7 @@ function applyChartAnalyticsI18N() {
             (window.currentLang === 'en' ? (dashboardConfig.dashTitleEn || 'dashboard') : (dashboardConfig.dashTitleZh || 'dashboard')),
             'dashboard'
         );
-        return `${base}_${new Date().toISOString().slice(0, 10)}.png`;
+        return `${base}_${getDataFileSuffix()}.png`;
     }
 
     async function downloadDashboardImage() {
@@ -10809,7 +10815,7 @@ function downloadChartPng(inZoom) {
         let png = canvas.toDataURL('image/png');
         let a = document.createElement('a');
         a.href = png;
-        a.download = (typeof EMBED_TITLE !== 'undefined' ? EMBED_TITLE : 'chart') + '_' + new Date().toISOString().slice(0, 10) + '.png';
+        a.download = (typeof EMBED_TITLE !== 'undefined' ? EMBED_TITLE : 'chart') + '_' + getDataFileSuffix() + '.png';
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         cleanup();
       };
@@ -10841,7 +10847,7 @@ function downloadChartPng(inZoom) {
         let png = canvas.toDataURL('image/png');
         let a = document.createElement('a');
         a.href = png;
-        a.download = (typeof EMBED_TITLE !== 'undefined' ? EMBED_TITLE : 'chart') + '_' + new Date().toISOString().slice(0, 10) + '.png';
+        a.download = (typeof EMBED_TITLE !== 'undefined' ? EMBED_TITLE : 'chart') + '_' + getDataFileSuffix() + '.png';
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         cleanup();
       };
@@ -11318,7 +11324,7 @@ function setupOverlaySwipe() {
                 : (dashboardConfig.dashTitleZh || 'Sxcoal Template'),
             'Sxcoal Template'
         );
-        link.download = `${_tplName}_${new Date().toISOString().slice(0, 10)}.json`;
+        link.download = `${_tplName}_${getDataFileSuffix()}.json`;
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
@@ -12022,13 +12028,30 @@ function setupOverlaySwipe() {
         return t || fallback;
     }
 
+    // 第六十六轮：导出/下载文件名日期后缀——跟随最新数据的颗粒度：
+    // 月度数据取最新月份（YYYY-MM），日度/周度（及缺省）取最新日期（YYYY-MM-DD）。
+    function getDataFileSuffix() {
+        try {
+            let ctx = (typeof getFactPeriodContext === 'function') ? getFactPeriodContext() : null;
+            if (ctx && ctx.last && ctx.g === 'month') {
+                let pad2 = n => (n < 10 ? '0' + n : '' + n);
+                return ctx.last.y + '-' + pad2(ctx.last.m);
+            }
+            if (typeof maxDateStr !== 'undefined' && maxDateStr) {
+                if (typeof isMonthlyData !== 'undefined' && isMonthlyData) return maxDateStr.substring(0, 7);
+                return maxDateStr;
+            }
+        } catch (e) {}
+        return new Date().toISOString().slice(0, 10);
+    }
+
     function buildExportFileName(lang) {
         // 第四十七轮：导出 HTML 文件名统一用英文标题，语言改用 _cn/_en 后缀区分（用户要求）
         let title = (dashboardConfig && dashboardConfig.dashTitleEn)
             || (dashboardConfig && dashboardConfig.dashTitleZh)
             || 'Sxcoal Analytics';
         let langSuffix = lang === 'en' ? 'en' : 'cn';
-        let dateStr = new Date().toISOString().slice(0, 10);
+        let dateStr = getDataFileSuffix();
         return sanitizeFileNamePart(title, 'Sxcoal Analytics') + '_' + langSuffix + '_' + dateStr + '.html';
     }
 
