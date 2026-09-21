@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh-CN" data-page-node-id="CAnHMoegbiEEM9KHpaQCft">
 <head data-page-node-id="gMySsmqlzltaH0qzJHXbaS">
@@ -3599,6 +3598,7 @@
 
     // ---- 第六十四轮：图表下方 / 免责声明上方的推广位（中英文分开；文本或图片；空串回退默认） ----
     const PROMO_DEFAULT_URL = 'https://www.sxcoal.com/site/data-tool?type=2';
+    const PROMO_DEFAULT_URL_EN = 'https://en.sxcoal.com/site/data-tool?type=2';
     const PROMO_DEFAULT = {
         cn: { type: 'text', title: '数据驱动决策，从这里开始', desc: '需要更完整、更细颗粒度的煤炭与能源行业数据？中国煤炭资源网数据库覆盖国内和国际产量、供需、进出口、库存、销量、运量、价格等全链条指标，支持按需筛选与 API 对接。', btn: '前往数据工具', url: '', image: '', alt: '', caption: '' },
         en: { type: 'text', title: 'Data-Driven Decisions Start Here', desc: 'Need more complete, granular coal & energy data? Sxcoal data terminal covers the full chain — production, supply & demand, imports & exports, inventories, transport, sales, prices and freight — with on-demand filtering and API access.', btn: 'Explore Sxcoal Data Tools', url: '', image: '', alt: '', caption: '' }
@@ -3630,7 +3630,7 @@
         let lang = isEn ? 'en' : 'cn';
         let def = PROMO_DEFAULT[lang];
         let bl = (p[lang] && (p[lang].title || p[lang].desc || p[lang].image || p[lang].btn || p[lang].url)) ? p[lang] : def;
-        let url = (bl.url && bl.url.trim()) ? bl.url.trim() : PROMO_DEFAULT_URL;
+        let url = (bl.url && bl.url.trim()) ? bl.url.trim() : (isEn ? PROMO_DEFAULT_URL_EN : PROMO_DEFAULT_URL);
         if (bl.type === 'image' && bl.image) {
             host.className = 'dashboard-promo promo-image';
             let inner = '<img class="promo-img" src="' + escapeHtml(bl.image) + '" alt="' + escapeHtml(bl.alt || '') + '">';
@@ -3685,7 +3685,7 @@
             bl.desc = getPromoVal('gPromo' + C + 'Desc');
             bl.btn = getPromoVal('gPromo' + C + 'Btn');
             let u = getPromoVal('gPromo' + C + 'Url');
-            bl.url = (u === '' || u === PROMO_DEFAULT_URL) ? '' : u;
+            bl.url = (u === '' || u === PROMO_DEFAULT_URL || u === PROMO_DEFAULT_URL_EN) ? '' : u;
             bl.image = getPromoVal('gPromo' + C + 'Image');
             bl.alt = getPromoVal('gPromo' + C + 'Alt');
             bl.caption = getPromoVal('gPromo' + C + 'Cap');
@@ -12486,4 +12486,3 @@ function setupOverlaySwipe() {
 </script>
 </body>
 </html>
-
