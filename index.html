@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN" data-page-node-id="CAnHMoegbiEEM9KHpaQCft">
 <head data-page-node-id="gMySsmqlzltaH0qzJHXbaS">
@@ -139,6 +140,28 @@
         padding: 5px 10px; font-size: 12.5px; border: 1px solid #D1D5DB; border-radius: 4px; background: #FFFFFF; color: var(--primary); min-width: 130px;
     }
     .remove-btn { position: absolute; top: -6px; right: -2px; font-size: 11px; color: #EF4444; cursor: pointer; background: none; border: none; padding: 0; }
+
+    /* 切片器多选下拉（复选框式，替代原生单选 select） */
+    .ms-wrap { position: relative; }
+    .ms-box { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 150px; max-width: 280px;
+        padding: 5px 10px; font-size: 12.5px; border: 1px solid #D1D5DB; border-radius: 4px; background: #FFFFFF;
+        color: var(--primary); cursor: pointer; text-align: left; font-family: inherit; }
+    .ms-box.active { border-color: var(--brand-red); }
+    .ms-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ms-arrow { font-size: 10px; color: #6B7280; flex: 0 0 auto; }
+    .ms-dd { position: absolute; top: calc(100% + 4px); left: 0; z-index: 80; min-width: 200px; max-width: 320px; max-height: 260px;
+        overflow-y: auto; background: #FFFFFF; border: 1px solid var(--border); border-radius: 6px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.10); padding: 6px; }
+    /* 下拉内搜索框：项目多时快速定位；吸顶常驻，输入时按原始值+显示名过滤选项 */
+    .ms-search { position: sticky; top: 0; z-index: 1; box-sizing: border-box; width: 100%; margin-bottom: 6px;
+        padding: 6px 9px; font-size: 12.5px; border: 1px solid #D1D5DB; border-radius: 4px; outline: none; background: #FFFFFF; color: var(--primary); }
+    .ms-search:focus { border-color: var(--brand-red); }
+    .ms-search::placeholder { color: #9CA3AF; }
+    .ms-opt { display: flex; align-items: center; gap: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--primary); cursor: pointer; border-radius: 4px; }
+    .ms-opt:hover { background: #F3F4F6; }
+    .ms-opt.sel { background: #FEF2F2; color: var(--brand-red); font-weight: 600; }
+    .filter-item .ms-opt input { width: auto; height: auto; padding: 0; margin: 0; min-width: 0; accent-color: var(--brand-red); cursor: pointer; flex: 0 0 auto; }
+    .ms-sep { border-top: 1px solid var(--border); margin: 4px 0; }
 
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; margin: 0 40px 24px 40px; }
     .kpi-card { background: #FFFFFF; border: 1px solid var(--border); padding: 16px; border-radius: 8px; position: relative; }
@@ -308,6 +331,9 @@
         transform-origin: center center;
     }
     .dashboard-watermark-bg > * { position: relative; z-index: 1; }
+    /* 筛选条需高于 KPI 卡片/图表：多选下拉 z-index 被关在筛选条的堆叠上下文内，
+       而兄弟节点同为 z-index:1 且 kpi-grid/chartGrid 在 DOM 中靠后会盖住下拉，故抬高筛选条 */
+    .dashboard-watermark-bg > .filters-bar { z-index: 30; }
 
     .modal-overlay {
         display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -467,6 +493,7 @@
         .upload-container { padding: 16px; }
         .dashboard-header { padding: 20px; }
         .filters-bar { margin: 0 16px 16px; padding: 12px; }
+        .ms-box { max-width: 210px; }
         .kpi-grid { margin: 0 16px 16px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
         .vis-grid { margin: 0 16px; grid-template-columns: 1fr; gap: 16px; }
         .chart-container { height: 280px; }
@@ -645,6 +672,12 @@
                 <button type="button" class="btn-build" style="margin-top:8px; font-size:12px; padding:4px 10px;" onclick="addUnitMapRow()" id="unitMapAddBtn">＋ 添加单位</button>
             </div>
             <div class="form-group">
+                <label style="font-weight:600;">单位升档阶梯（大数自动进位，与上方双语映射共用）</label>
+                <div style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">系统已内置：质量（吨/kt/Mt/Bt·Tt）、货币（元·万元·亿元·万亿元、USD·USD mn·USD bn·USD tn）、电力（千瓦时·万千瓦时·亿千瓦时·万亿千瓦时、kWh·MWh·GWh·TWh·PWh）。英文进位读取上方映射产出的英文单位（Mt/TWh/USD bn…）。如需其它单位进位，在此补充：数值 ≥ 进位除数 时自动升到下一级。</div>
+                <div id="unitLadderRows"></div>
+                <button type="button" class="btn-build" style="margin-top:8px; font-size:12px; padding:4px 10px;" onclick="addUnitLadderRow()" id="unitLadderAddBtn">＋ 添加进位规则</button>
+            </div>
+            <div class="form-group">
                 <label id="globalSlicerLabel">添加全局非数值筛选器 (切片器)</label>
                 <div class="flex-row">
                     <select id="slicerFieldSel"></select>
@@ -670,8 +703,9 @@
                 <!-- 中文 -->
                 <div class="gs-pane active" id="summary_cn">
                     <div class="gs-sec">
-                        <div class="gs-sec-h" id="summaryCnLabel">自定义全盘综述（中文）</div>
-                        <textarea id="gSummaryZh" rows="3" placeholder="中文综述文本 (支持HTML标签)..."></textarea>
+                        <div class="gs-sec-h" id="summaryCnLabel">自定义全盘综述（中文 · 支持占位符自动填充）</div>
+                        <textarea id="gSummaryZh" rows="3" placeholder="中文综述文本（支持HTML）。占位符：{period} 最新期｜{col:列名} 最新值(已带单位)｜{row:列名|品类} 品类值(多品类用、或,合并求和；!品类=排除该项，如 !炼焦煤)｜{yoy:列名}/{mom:列名}/{wow:列名}/{dod:列名} 同比/月环比/周环比/日环比｜{cum:列名} 累计(已带单位)｜{cumpct:列名} 累计同比。列名用看板显示名，可省略单位后缀；{col}/{cum}已含单位且大数自动升档(万吨→亿吨)，模板勿重复写单位；留空则系统自动生成。"></textarea>
+                        <div style="font-size:11px; color:#6B7280; margin-top:4px; line-height:1.6;">例：<code style="background:#F3F4F6; padding:0 4px; border-radius:3px;">{period}，中国煤炭进口量{col:当月进口量}，同比{yoy:当月进口量}、月环比{mom:当月进口量}；其中动力煤{row:当月进口量|!炼焦煤}、炼焦煤{row:当月进口量|炼焦煤}。1-8月累计{cum:当月进口量}，同比{cumpct:当月进口量}。</code> 周/日环比 {wow}/{dod} 仅当日度/周度数据有上期时生效，其它粒度留空。</div>
                     </div>
                     <div class="footer-cfg-part">
                         <div class="gs-sec-h plain" id="footerCnLabel">页脚 · 中文（免责声明 / 联系方式 / 社媒 / 二维码）</div>
@@ -703,8 +737,9 @@
                 <!-- English -->
                 <div class="gs-pane" id="summary_en">
                     <div class="gs-sec">
-                        <div class="gs-sec-h" id="summaryEnLabel">Executive summary (English)</div>
-                        <textarea id="gSummaryEn" rows="3" placeholder="English summary text (supports HTML tags)..."></textarea>
+                        <div class="gs-sec-h" id="summaryEnLabel">Executive summary (English · placeholder auto-fill)</div>
+                        <textarea id="gSummaryEn" rows="3" placeholder="English summary text (HTML supported). Placeholders: {period} latest period｜{col:Field} latest value｜{row:Field|Category} category value (prefix ! to EXCLUDE, e.g. !Coking coal)｜{yoy:Field}/{mom:Field}/{wow:Field}/{dod:Field} YoY/MoM/WoW/DoD｜{cum:Field} YTD｜{cumpct:Field} YTD YoY. Units auto-scale (10k t→Mt, Mt→Bt; 亿千瓦时→TWh→PWh); blank = auto-generated."></textarea>
+                        <div style="font-size:11px; color:#6B7280; margin-top:4px; line-height:1.6;">e.g. <code style="background:#F3F4F6; padding:0 4px; border-radius:3px;">In {period}, China {col:Coal Imports} reached {col:Coal Imports}, YoY {yoy:Coal Imports}; {row:Coal Imports|Thermal coal}, {row:Coal Imports|Coking coal}. YTD {cum:Coal Imports}, YoY {cumpct:Coal Imports}.</code> {wow}/{dod} work only for weekly/daily data; for other granularities they render empty.</div>
                     </div>
                     <div class="footer-cfg-part">
                         <div class="gs-sec-h plain" id="footerEnLabel">Footer · English (disclaimer / contact / social / QR)</div>
@@ -2633,6 +2668,8 @@
     function applyGlobalSettings() {
         // 第四十四轮：先收存单位映射，再走统一刷新（末尾 switchLanguage 会整盘重渲，单位/数值立即生效）
         saveUnitMapFromUI();
+        // 第六十一轮：收存单位升档阶梯（大数自动进位）
+        try { saveUnitLadderFromUI(); } catch (e) { console.warn('单位升档阶梯保存失败', e); }
         if(dateColumn) {
             dashboardConfig.dateRange.start = document.getElementById('gStartDate').value || dashboardConfig.dateRange.start;
             dashboardConfig.dateRange.end = document.getElementById('gEndDate').value || dashboardConfig.dateRange.end;
@@ -2714,35 +2751,179 @@
                 }
             }
             for(let slicer of dashboardConfig.slicers) {
-                let selVal = document.getElementById(`filter_${slicer.field}`)?.value;
-                if(selVal && selVal !== 'ALL' && String(row[slicer.field]) !== selVal) return false;
+                let selEl = document.getElementById(`filter_${slicer.field}`);
+                let selVal = selEl ? selEl.value : '';
+                if(!selVal || selVal === 'ALL') continue;
+                // 多选切片器：hidden input 存 JSON 数组；兼容旧的单值字符串
+                let selArr = parseSlicerSelValue(selVal);
+                if(Array.isArray(selArr)) {
+                    if(!selArr.length) continue;
+                    if(!selArr.includes(String(row[slicer.field]))) return false;
+                } else if(String(row[slicer.field]) !== selVal) return false;
             }
             return true;
         });
         __filteredCache = { sig: _fSig, rows: rawData, data: filteredData };
         }
 
-        renderFiltersBar();
+        // skipFiltersBar：多选切片器勾选时跳过筛选条重建，保持下拉展开
+        if (!(opts && opts.skipFiltersBar)) renderFiltersBar();
         generateExecutiveSummary();
         if (skipRender) return;
         renderKPIs(); renderCharts();
     }
     
+    // ── 切片器多选状态（field → 选中值数组；空数组 = 全部）──
+    var __slicerSel = {};
+    var __slicerValsCache = { rows: null, vals: {} };
+
+    function parseSlicerSelValue(v) {
+        if (typeof v !== 'string' || !v || v === 'ALL') return [];
+        try { let a = JSON.parse(v); return Array.isArray(a) ? a.map(String) : [String(v)]; }
+        catch (e) { return [v]; }
+    }
+    function getSlicerSelection(field) {
+        let arr = __slicerSel[field];
+        return Array.isArray(arr) ? arr.slice() : [];
+    }
+    function setSlicerSelection(field, arr) {
+        __slicerSel[field] = (arr || []).map(String);
+        let hid = document.getElementById('filter_' + field);
+        if (hid) hid.value = JSON.stringify(__slicerSel[field]);
+    }
+    // 切片器可选项：维度表注入列会带全量维度值，这里只保留事实表内实际有数据的项目
+    function getSlicerOptionValues(field) {
+        if (__slicerValsCache.rows !== rawData) __slicerValsCache = { rows: rawData, vals: {} };
+        if (__slicerValsCache.vals[field]) return __slicerValsCache.vals[field];
+        let present = new Set();
+        rawData.forEach(row => { let v = row[field]; if (v !== null && v !== undefined && v !== '') present.add(String(v)); });
+        let opts = Array.from(uniqueValuesMap[field] || [])
+            .filter(v => typeof v === 'string' && v !== null && present.has(String(v)));
+        __slicerValsCache.vals[field] = opts;
+        return opts;
+    }
+    function escMsAttr(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function msBoxText(selArr, vals) {
+        let isEn = (window.currentLang === 'en');
+        if (!selArr.length) return uiText[window.currentLang].all;
+        let names = selArr.map(v => String(getMappedValue(v, window.currentLang)));
+        if (names.length === 1) return names[0];
+        if (names.length === 2) return names.join(isEn ? ', ' : '、');
+        return isEn ? `${names[0]} +${names.length - 1}` : `${names[0]} 等${names.length}项`;
+    }
+    function toggleMsDropdown(btn, field) {
+        if (window.__msClickBound !== true) {
+            window.__msClickBound = true;
+            document.addEventListener('click', function (e) {
+                if (e.target && e.target.closest && e.target.closest('.ms-wrap')) return;
+                document.querySelectorAll('.ms-dd').forEach(function (dd) { dd.style.display = 'none'; });
+                document.querySelectorAll('.ms-box').forEach(function (b) { b.classList.remove('active'); });
+            });
+        }
+        let wrap = btn.closest('.ms-wrap');
+        let dd = wrap.querySelector('.ms-dd');
+        let isOpen = dd.style.display !== 'none';
+        document.querySelectorAll('.ms-dd').forEach(function (d) { if (d !== dd) d.style.display = 'none'; });
+        document.querySelectorAll('.ms-box').forEach(function (b) { if (b !== btn) b.classList.remove('active'); });
+        dd.style.display = isOpen ? 'none' : 'block';
+        btn.classList.toggle('active', !isOpen);
+        // 打开时重置搜索框并恢复全部选项（关闭下拉不重置，方便再次打开仍见上次结果）
+        if (!isOpen) {
+            let s = dd.querySelector('.ms-search');
+            if (s) s.value = '';
+            dd.querySelectorAll('.ms-opt:not(.ms-all)').forEach(function (o) { o.style.display = ''; });
+        }
+    }
+    function onMsSearch(input, field) {
+        let q = (input.value || '').trim().toLowerCase();
+        let dd = input.closest('.ms-dd');
+        if (!dd) return;
+        dd.querySelectorAll('.ms-opt:not(.ms-all)').forEach(function (opt) {
+            let cb = opt.querySelector('.ms-check');
+            let span = opt.querySelector('span');
+            let text = (span ? span.textContent : '') + ' ' + (cb ? cb.value : '');
+            opt.style.display = (!q || text.toLowerCase().indexOf(q) !== -1) ? '' : 'none';
+        });
+    }
+    function refreshMsUi(field) {
+        let item = document.querySelector(`.filter-item[data-ffield="${field}"]`);
+        if (!item) return;
+        let selArr = getSlicerSelection(field);
+        let txt = item.querySelector('.ms-text');
+        if (txt) txt.textContent = msBoxText(selArr, getSlicerOptionValues(field).map(String));
+        item.querySelectorAll('.ms-opt:not(.ms-all)').forEach(function (opt) {
+            let cb = opt.querySelector('.ms-check');
+            if (!cb) return;
+            let isSel = selArr.includes(cb.value);
+            cb.checked = isSel;
+            opt.classList.toggle('sel', isSel);
+        });
+        let allOpt = item.querySelector('.ms-opt.ms-all');
+        if (allOpt) {
+            let allCb = allOpt.querySelector('.ms-check');
+            if (allCb) allCb.checked = selArr.length === 0;
+            allOpt.classList.toggle('sel', selArr.length === 0);
+        }
+    }
+    function onMsCheckChange(cb, field) {
+        let cur = getSlicerSelection(field);
+        let val = cb.value;
+        if (cb.checked) { if (!cur.includes(val)) cur.push(val); }
+        else cur = cur.filter(v => v !== val);
+        setSlicerSelection(field, cur);
+        refreshMsUi(field);
+        // 跳过筛选条重建，保持下拉展开
+        applyFilterContext({ skipFiltersBar: true });
+    }
+    function onMsAllChange(cb, field) {
+        if (cb.checked) {
+            setSlicerSelection(field, []);
+            refreshMsUi(field);
+            applyFilterContext({ skipFiltersBar: true });
+        } else {
+            cb.checked = true; // 「全部」不可取消勾选，取消具体选项即可
+        }
+    }
+
     function renderFiltersBar() {
         const container = document.getElementById('filtersContainer');
         container.innerHTML = '';
+        // 清理失效选择：字段已删除 / 选中值不在当前可选项里（数据或维度变更后）
+        let validFields = new Set(dashboardConfig.slicers.map(s => s.field));
+        Object.keys(__slicerSel).forEach(f => { if (!validFields.has(f)) delete __slicerSel[f]; });
+        dashboardConfig.slicers.forEach(s => {
+            __slicerSel[s.field] = getSlicerSelection(s.field)
+                .filter(v => getSlicerOptionValues(s.field).map(String).includes(v));
+        });
         dashboardConfig.slicers.forEach(slicer => {
-            let vals = Array.from(uniqueValuesMap[slicer.field] || []).filter(v => typeof v === 'string' && v !== null);
+            let vals = getSlicerOptionValues(slicer.field);
+            let selArr = getSlicerSelection(slicer.field);
             let removeBtn = window.isExportedHtml ? '' : `<button class="remove-btn" onclick="removeSlicer('${slicer.field}')">✖</button>`;
-            container.innerHTML += `
-                <div class="filter-item">
+            let optsHtml = vals.map(v => {
+                let vStr = String(v);
+                let isSel = selArr.includes(vStr);
+                let label = getMappedValue(v, window.currentLang);
+                return `<label class="ms-opt${isSel ? ' sel' : ''}"><input type="checkbox" class="ms-check" value="${escMsAttr(vStr)}" ${isSel ? 'checked' : ''} onchange="onMsCheckChange(this, '${slicer.field}')"><span>${label}</span></label>`;
+            }).join('');
+            container.insertAdjacentHTML('beforeend', `
+                <div class="filter-item" data-ffield="${escMsAttr(slicer.field)}">
                     ${removeBtn}
-                    <label>切片: ${getMappedValue(slicer.field, window.currentLang)}</label>
-                    <select id="filter_${slicer.field}" onchange="applyFilterContext()">
-                        <option value="ALL">${uiText[window.currentLang].all}</option>
-                        ${vals.map(v => `<option value="${v}">${getMappedValue(v, window.currentLang)}</option>`).join('')}
-                    </select>
-                </div>`;
+                    <label>${getMappedValue(slicer.field, window.currentLang)}</label>
+                    <div class="ms-wrap">
+                        <button type="button" class="ms-box" onclick="toggleMsDropdown(this, '${slicer.field}')">
+                            <span class="ms-text">${escMsAttr(msBoxText(selArr, vals.map(String)))}</span><span class="ms-arrow">▾</span>
+                        </button>
+                        <div class="ms-dd" style="display:none;">
+                            <input type="text" class="ms-search" placeholder="${window.currentLang === 'en' ? 'Search…' : '搜索…'}" oninput="onMsSearch(this, '${slicer.field}')">
+                            <label class="ms-opt ms-all${selArr.length ? '' : ' sel'}"><input type="checkbox" class="ms-check" ${selArr.length ? '' : 'checked'} onchange="onMsAllChange(this, '${slicer.field}')"><span>${uiText[window.currentLang].all}</span></label>
+                            <div class="ms-sep"></div>
+                            ${optsHtml}
+                        </div>
+                    </div>
+                    <input type="hidden" id="filter_${slicer.field}" value="${escMsAttr(JSON.stringify(selArr))}">
+                </div>`);
         });
     }
 
@@ -2760,12 +2941,221 @@
         return dateStr;
     }
 
+    // ===== 综述模板占位符填充引擎（bak76） =====
+    // 把「全局设置→综述与页脚」里中/英文综述框当作模板，占位符按当前数据自动填充：
+    //   {period}            最新期标签，如「2026年8月」(Aug 2026)
+    //   {col:列名}          该列最新期(全部/合计)数值，带单位
+    //   {row:列名|品类}     该列最新期指定品类行的数值，带单位
+    //   {yoy:列名}/{mom:列名}  该列最新期同比/环比百分比（带 ↑↓ 箭头）
+    //   {cum:列名}          YTD 累计（当年截至最新期求和），带单位
+    //   {cumpct:列名}       YTD 累计同比（当年累计 vs 去年同区间累计）
+    // 列名/品类用看板上显示的“中文名/英文名”填写，引擎反查 raw 键；未命中占位符原样保留（向后兼容纯文本/HTML）。
+    // 多品类合并：{row:列名|动力煤、炼焦煤} 用 、,， 分隔多项并求和。
+    // 排除写法：{row:列名|!炼焦煤} = 最新期除“炼焦煤”外所有品类之和；多项排除 {row:列名|!炼焦煤、!其他}。
+    // 第六十一轮：自动就近单位。{col}/{cum}/{row} 数值较大时按通用阶梯自动升档（见 SUMM_UNIT_LADDERS）：
+    //   中文 万吨→亿吨（≥1万）、吨→千吨→万吨；英文 万吨→Mt，Mt→Bt（≥1000，国际惯例）；电力 亿千瓦时→万亿千瓦时、TWh→PWh。
+    function summNormName(s) {
+        return String(s === null || s === undefined ? '' : s).trim()
+            .replace(/[（(]/g, '(').replace(/[）)]/g, ')').replace(/\s+/g, '');
+    }
+    function summResolveColumn(key, lang) {
+        if (!key) return '';
+        let k = String(key).trim();
+        if (translationDict[k] && translationDict[k][lang]) return k; // k 已是 raw 键
+        for (let raw in translationDict) { if (translationDict[raw][lang] === k) return raw; }
+        if (k === '') return k;
+        // 模糊匹配：用户常省略列名里的单位后缀（当月进口量 ≙ 当月进口量（万吨））或混用全/半角括号
+        let pool = Object.keys(translationDict);
+        try { if (rawData && rawData[0]) Object.keys(rawData[0]).forEach(c => { if (pool.indexOf(c) === -1) pool.push(c); }); } catch (e) {}
+        // 注意：不要把 k 本身塞回 pool —— 否则 step1 的精确匹配会把简写与自身匹配、提前返回，
+        // 导致省略单位后缀的模糊解析（step2/3）失效。真实列名已经过 rawData[0] 扫描进入 pool。
+        let target = summNormName(k);
+        let stripUnit = s => { let n = summNormName(s).replace(/\([^)]*\)/g, ''); return n; };
+        // 1) 规范化后完全一致（全/半角括号、空白差异）
+        for (let raw of pool) { if (summNormName(raw) === target) return raw; }
+        // 2) 输入省略了括号单位后缀：raw 以输入开头（当月进口量 → 当月进口量（万吨））
+        for (let raw of pool) { let nr = summNormName(raw); if (nr !== target && nr.indexOf(target) === 0) return raw; }
+        // 3) 双方都去掉括号后缀后一致
+        let ts = stripUnit(target);
+        if (ts) for (let raw of pool) { let rs = stripUnit(raw); if (rs && rs === ts) return raw; }
+        return k; // 无翻译则默认 k 即 raw
+    }
+    function summResolveCat(key, lang) {
+        if (!key) return '';
+        let k = String(key).trim();
+        if (translationDict[k] && translationDict[k][lang]) return k;
+        for (let raw in translationDict) { if (translationDict[raw][lang] === k) return raw; }
+        return k;
+    }
+    function summPeriodKey() {
+        if (!maxDateStr) return '';
+        let g = (typeof getDateGranularity === 'function') ? getDateGranularity(filteredData, dateColumn) : null;
+        if (g === 'month') return maxDateStr.slice(0, 7);
+        if (g === 'year') return maxDateStr.slice(0, 4);
+        return maxDateStr.slice(0, 10); // day / week
+    }
+    function summLatestPeriodRows() {
+        if (!dateColumn) return [];
+        let pk = summPeriodKey();
+        if (!pk) return [];
+        return (filteredData || []).filter(d => String(d[dateColumn] || '').indexOf(pk) === 0);
+    }
+    // 第六十一轮：通用单位升档阶梯（大数自动进位）。
+    // 设计目标：① 覆盖质量/货币/电力等常见族，支持任意单位；② 与“全局设置 → 数值单位双语映射”对齐——
+    //   英文进位读取 unitMap 产出的英文单位（Mt/TWh/USD mn…），用户维护单位映射即自动生效；
+    //   额外的自定义进位规则写在 dashboardConfig.unitLadders（全局设置同页可编辑）。
+    // ③ Mt 的上级按国际惯例写作 Bt（billion tonnes，=1000 Mt），不再写 Gt。
+    // 每条：当前单位 → { to: 下一级单位, div: 进位除数 }，当数值 ≥ div 时自动升一级（保留“≥1 个上级单位”的人类书写习惯）。
+    const SUMM_UNIT_LADDERS = {
+        // —— 中文质量 ——
+        '千克': { to: '吨', div: 1e3 }, '吨': { to: '千吨', div: 1e3 }, '千吨': { to: '万吨', div: 10 },
+        '万吨': { to: '亿吨', div: 1e4 }, '亿吨': { to: '万亿吨', div: 1e4 },
+        // —— 英文质量（每级 ×1000；Mt 上级为 Bt）——
+        'kg': { to: 't', div: 1e3 }, 't': { to: 'kt', div: 1e3 }, 'kt': { to: 'Mt', div: 1e3 },
+        'Mt': { to: 'Bt', div: 1e3 }, 'Bt': { to: 'Tt', div: 1e3 },
+        // —— 中文货币 ——
+        '元': { to: '万元', div: 1e4 }, '万元': { to: '亿元', div: 1e4 }, '亿元': { to: '万亿元', div: 1e4 },
+        '美元': { to: '万美元', div: 1e4 }, '万美元': { to: '亿美元', div: 1e4 }, '亿美元': { to: '万亿美元', div: 1e4 },
+        // —— 英文货币 ——
+        'USD': { to: 'USD mn', div: 1e6 }, 'USD mn': { to: 'USD bn', div: 1e3 }, 'USD bn': { to: 'USD tn', div: 1e3 },
+        // —— 中文电力/能量（发电量等）——
+        '千瓦时': { to: '万千瓦时', div: 1e4 }, '万千瓦时': { to: '亿千瓦时', div: 1e4 }, '亿千瓦时': { to: '万亿千瓦时', div: 1e4 },
+        // —— 英文电力/能量 ——
+        'Wh': { to: 'kWh', div: 1e3 }, 'kWh': { to: 'MWh', div: 1e3 }, 'MWh': { to: 'GWh', div: 1e3 },
+        'GWh': { to: 'TWh', div: 1e3 }, 'TWh': { to: 'PWh', div: 1e3 }
+    };
+    // 用户自定义进位优先于内置默认；无自定义时回退内置
+    function getSummLadderStep(unit) {
+        if (!unit) return null;
+        let cfg = (dashboardConfig && dashboardConfig.unitLadders) || null;
+        if (cfg && cfg[unit] && cfg[unit].to && isFinite(Number(cfg[unit].div)) && Number(cfg[unit].div) > 0) {
+            return { to: String(cfg[unit].to), div: Number(cfg[unit].div) };
+        }
+        let d = SUMM_UNIT_LADDERS[unit];
+        return d ? { to: d.to, div: d.div } : null;
+    }
+    // 逐级进位：把数值换算到“≥1 个上级单位”的最大单位
+    function summEscalate(value, unit) {
+        let cur = unit, val = Number(value);
+        if (!isFinite(val)) return { value: val, unit: cur };
+        let guard = 0;
+        while (guard++ < 12) {
+            let step = getSummLadderStep(cur);
+            if (!step || !(step.div > 0)) break;
+            if (Math.abs(val) >= step.div) { val = val / step.div; cur = step.to; }
+            else break;
+        }
+        return { value: val, unit: cur };
+    }
+    function summFmt(num, col, isEn) {
+        let v = Number(num);
+        if (!isFinite(v)) return '-';
+        if (!isEn) {
+            let rawUnit = extractPureUnit(col, false) || '';
+            let sc = summEscalate(v, rawUnit);
+            return sc.value.toFixed(2) + (sc.unit ? ' ' + sc.unit : '');
+        }
+        // 英文：复用 enUnitDivisor 把原始单位折算成国际单位（万吨→Mt、万美元→USD mn、亿千瓦时→TWh…），再按通用阶梯进位（Mt→Bt 等）
+        let enUnit = extractPureUnit(col, true) || '';
+        let enVal = v / enUnitDivisor(col);
+        let sc = summEscalate(enVal, enUnit);
+        return sc.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (sc.unit ? ' ' + sc.unit : '');
+    }
+    function summColLatest(col, isEn) {
+        let rows = summLatestPeriodRows();
+        let detail = rows.filter(d => !isTotalRow(d));
+        let use = detail.length ? detail : rows;
+        return summFmt(calcValueForField(use, col, 'sum', {}), col, isEn);
+    }
+    function summRowLatest(col, cat, isEn) {
+        // 多品类合并求和：动力煤=无烟煤+其他烟煤+…（分隔符  、 ， , 空格）
+        // 排除写法：以 ! 开头的品类表示“排除该项”，如 !炼焦煤 = 除炼焦煤外的所有品类之和；多项 !炼焦煤、!其他
+        let raws = String(cat || '').split(/[、，,\s]+/).map(t => t.trim()).filter(Boolean);
+        if (!raws.length) return '-';
+        let excludeMode = raws.some(r => r.charAt(0) === '!');
+        let cats = raws.map(r => summResolveCat(r.replace(/^!/, ''), isEn ? 'en' : 'zh')).filter(Boolean);
+        if (!cats.length) return '-';
+        let rows = summLatestPeriodRows();
+        let detail = rows.filter(d => !isTotalRow(d));
+        let pool = detail.length ? detail : rows; // 优先用明细行，避免“合计”行被重复计入
+        let matched = pool.filter(d => {
+            let hit = Object.keys(d).some(c => {
+                if (d[c] === null || d[c] === undefined) return false;
+                let mv = getMappedValue(d[c], isEn ? 'en' : 'zh');
+                return cats.some(t => mv === t || summNormName(d[c]) === summNormName(t));
+            });
+            return excludeMode ? !hit : hit;
+        });
+        if (!matched.length) return '-';
+        return summFmt(calcValueForField(matched, col, 'sum', {}), col, isEn);
+    }
+    // 第六十二轮：同环比箭头着色。
+    // 颜色按语言惯例区分——中文红涨绿跌；英文绿涨红跌（西方惯例）。箭头字形中英文统一为 ↑/↓，
+    // 不再用 ▲/▼，避免“字形不同”被误读为语义差异（实际上只是各语言配色习惯不同）。加粗增强辨识度。
+    function summRateSpan(r, isEn) {
+        if (r === null || isNaN(r) || r === 0) {
+            let c = '#6B7280';
+            return `<span style="color:${c};font-weight:600;">→0.00%</span>`;
+        }
+        // 涨/跌配色：中文 红涨(#DC2626)/绿跌(#16A34A)；英文反过来 绿涨(#16A34A)/红跌(#DC2626)
+        let upColor = isEn ? '#16A34A' : '#DC2626';
+        let downColor = isEn ? '#DC2626' : '#16A34A';
+        let color = r > 0 ? upColor : downColor;
+        let arrow = r > 0 ? '↑' : '↓';
+        return `<span style="color:${color};font-weight:700;">${arrow}${Math.abs(r).toFixed(2)}%</span>`;
+    }
+    function summRate(col, rateType, isEn) {
+        if (!dateColumn || !maxDateStr) return '';
+        let r = calcAutoPeriodRate({ rows: filteredData, xField: dateColumn, xValue: maxDateStr, valueField: col, agg: 'sum', rateType: rateType });
+        if (r === null || isNaN(r)) return '';
+        return summRateSpan(r, isEn);
+    }
+    function summYtd(col, isEn) {
+        if (!dateColumn || !maxDateStr) return '-';
+        let year = maxDateStr.slice(0, 4);
+        let rows = (filteredData || []).filter(d => String(d[dateColumn] || '').indexOf(year) === 0);
+        let detail = rows.filter(d => !isTotalRow(d));
+        let use = detail.length ? detail : rows;
+        return summFmt(calcValueForField(use, col, 'sum', {}), col, isEn);
+    }
+    function summYtdRate(col, isEn) {
+        if (!dateColumn || !maxDateStr) return '';
+        let year = maxDateStr.slice(0, 4), prevYear = String(Number(year) - 1);
+        let prevEnd = prevYear + maxDateStr.slice(4); // 累计同比只取去年同期区间（截至去年同日），避免去年全年数据稀释
+        let cur = (filteredData || []).filter(d => String(d[dateColumn] || '').indexOf(year) === 0);
+        let prev = (filteredData || []).filter(d => { let v = String(d[dateColumn] || ''); return v.indexOf(prevYear) === 0 && v <= prevEnd; });
+        let cd = cur.filter(d => !isTotalRow(d)), pd = prev.filter(d => !isTotalRow(d));
+        let cUse = cd.length ? cd : cur, pUse = pd.length ? pd : prev;
+        let c = calcValueForField(cUse, col, 'sum', {}), p = calcValueForField(pUse, col, 'sum', {});
+        if (c === null || p === null || isNaN(c) || isNaN(p) || p === 0) return '';
+        let r = (c - p) / p * 100;
+        return summRateSpan(r, isEn);
+    }
+    function fillSummaryTemplate(tpl, isEn) {
+        if (!tpl) return '';
+        let lang = isEn ? 'en' : 'zh';
+        return tpl.replace(/\{(\w+)(?::([^}]*))?\}/g, function (m, type, arg) {
+            switch (type) {
+                case 'period': return formatDateLabel(maxDateStr, isEn);
+                case 'col': return summColLatest(summResolveColumn(arg, lang), isEn);
+                case 'row': { let p = String(arg || '').split('|'); return summRowLatest(summResolveColumn(p[0], lang), p[1] || '', isEn); }
+                case 'yoy': return summRate(summResolveColumn(arg, lang), 'yoy', isEn);
+                case 'mom': return summRate(summResolveColumn(arg, lang), 'mom', isEn);
+                case 'wow': return summRate(summResolveColumn(arg, lang), 'wow', isEn);
+                case 'dod': return summRate(summResolveColumn(arg, lang), 'dod', isEn);
+                case 'cum': return summYtd(summResolveColumn(arg, lang), isEn);
+                case 'cumpct': return summYtdRate(summResolveColumn(arg, lang), isEn);
+                default: return m; // 未知占位符原样保留
+            }
+        });
+    }
+
     function generateExecutiveSummary() {
         const box = document.getElementById('executiveSummary');
         let isEn = (window.currentLang === 'en');
         
-        if(isEn && dashboardConfig.dashSummaryEn) { box.innerHTML = dashboardConfig.dashSummaryEn; return; }
-        if(!isEn && dashboardConfig.dashSummaryZh) { box.innerHTML = dashboardConfig.dashSummaryZh; return; }
+        if(isEn && dashboardConfig.dashSummaryEn) { box.innerHTML = fillSummaryTemplate(dashboardConfig.dashSummaryEn, true); return; }
+        if(!isEn && dashboardConfig.dashSummaryZh) { box.innerHTML = fillSummaryTemplate(dashboardConfig.dashSummaryZh, false); return; }
         if(!filteredData.length) { box.textContent = isEn ? "No data under current filter." : "当前无筛选数据或过滤条件排他。"; return; }
 
         let numField = numericColumns[0], catField = stringColumns[0], latestDate = '';
@@ -4065,6 +4455,11 @@
         }
         // 非折线图使用 Sxcoal 从深到浅暖色调；项目较少时采用间隔取色，增强视觉区分度
         let palette = SXCOAL_PALETTE.slice();
+        // 筛选/切片后仅剩 1-2 项时避开最深色（#110303/#2D1007 近黑），从 RGB(120,0,0) 起取色
+        if (seriesCount <= 2) {
+            if (seriesCount <= 1) return ['#780000'];
+            return ['#780000', '#E1783E'];
+        }
         if (seriesCount <= palette.length) {
             if (seriesCount <= 1) return palette.slice(0, seriesCount);
             let step = Math.max(1, Math.floor(palette.length / seriesCount));
@@ -7803,6 +8198,7 @@ function applyChartAnalyticsI18N() {
         normalizeCurrentDateData(false);
         reconcileDateRangeWithData();
         renderUnitMapRows();
+        renderUnitLadderRows();
         document.getElementById('gStartDate').value = dashboardConfig.dateRange.start || ''; document.getElementById('gEndDate').value = dashboardConfig.dateRange.end || '';
         // 指定时间/日期主维度列控件已移除（系统由 detectDateColumnFromData 自动识别，且手动选择对 Dim 数据无意义）。
         document.getElementById('gTitleZh').value = dashboardConfig.dashTitleZh || ''; document.getElementById('gTitleEn').value = dashboardConfig.dashTitleEn || '';
@@ -7946,6 +8342,67 @@ function applyChartAnalyticsI18N() {
             map[u] = { en: en, op: op, factor: (isFinite(factor) && factor > 0) ? factor : 1 };
         });
         dashboardConfig.unitMap = map; // 新对象身份 → getUnitConv 缓存自动失效
+    }
+
+    // 第六十一轮：单位升档阶梯编辑器（与双语单位映射同页）。config 仅存用户自定义/覆盖项，内置默认在 getSummLadderStep 兜底。
+    function renderUnitLadderRows() {
+        if (!dashboardConfig.unitLadders || typeof dashboardConfig.unitLadders !== 'object' || Array.isArray(dashboardConfig.unitLadders)) dashboardConfig.unitLadders = {};
+        let container = document.getElementById('unitLadderRows');
+        if (!container) return;
+        container.innerHTML = '';
+        let isEn = window.currentLang === 'en';
+        let keys = Object.keys(dashboardConfig.unitLadders);
+        if (!keys.length) {
+            container.innerHTML = `<div style="font-size:11.5px; color:#9CA3AF;">${isEn ? 'No custom escalation rules yet — built-in families cover mass / currency / power. Add one below if needed.' : '暂无自定义进位规则——系统已内置质量/货币/电力等常用族，如需其它单位可在下方补充。'}</div>`;
+            return;
+        }
+        keys.forEach(u => {
+            let cfg = dashboardConfig.unitLadders[u];
+            if (!cfg || !cfg.to) return;
+            let row = document.createElement('div');
+            row.className = 'local-filter-row';
+            row.style.marginBottom = '6px';
+            row.innerHTML = `<input type="text" class="ul-from" value="${u.replace(/"/g,'&quot;')}" placeholder="${isEn?'current unit':'当前单位'}" title="${isEn?'current unit (same as header / EN unit)':'当前单位（与表头或英文单位一致）'}" style="width:30%; min-width:0; font-size:12px;">
+                <span style="color:#9CA3AF;font-size:12px;">→</span>
+                <input type="text" class="ul-to" value="${(cfg.to||'').replace(/"/g,'&quot;')}" placeholder="${isEn?'next unit':'下一级'}" style="width:28%; min-width:0; font-size:12px;">
+                <input type="number" step="any" min="0" class="ul-div" value="${cfg.div!==undefined&&cfg.div!==null&&cfg.div!==''?cfg.div:''}" placeholder="${isEn?'divisor':'进位除数'}" style="width:24%; min-width:0; font-size:12px;">
+                <button type="button" class="remove-btn" style="position:static; flex:0 0 auto; margin-left:4px; font-size:11px; color:#EF4444; cursor:pointer; background:none; border:none; padding:0 2px;" title="${isEn?'Remove':'移除'}" onclick="this.parentNode.remove()">✖</button>`;
+            container.appendChild(row);
+        });
+    }
+
+    function addUnitLadderRow() {
+        let isEn = window.currentLang === 'en';
+        let container = document.getElementById('unitLadderRows');
+        if (!container) return;
+        if (!container.querySelector('.local-filter-row')) container.innerHTML = '';
+        let row = document.createElement('div');
+        row.className = 'local-filter-row';
+        row.style.marginBottom = '6px';
+        row.innerHTML = `<input type="text" class="ul-from" placeholder="${isEn?'current unit':'当前单位'}" style="width:30%; min-width:0; font-size:12px;">
+            <span style="color:#9CA3AF;font-size:12px;">→</span>
+            <input type="text" class="ul-to" placeholder="${isEn?'next unit':'下一级'}" style="width:28%; min-width:0; font-size:12px;">
+            <input type="number" step="any" min="0" class="ul-div" placeholder="${isEn?'divisor':'进位除数'}" style="width:24%; min-width:0; font-size:12px;">
+            <button type="button" class="remove-btn" style="position:static; flex:0 0 auto; margin-left:4px; font-size:11px; color:#EF4444; cursor:pointer; background:none; border:none; padding:0 2px;" title="${isEn?'Remove':'移除'}" onclick="this.parentNode.remove()">✖</button>`;
+        container.appendChild(row);
+        row.querySelector('.ul-from').focus();
+    }
+
+    function saveUnitLadderFromUI() {
+        let container = document.getElementById('unitLadderRows');
+        if (!container) return;
+        let map = {};
+        container.querySelectorAll('.local-filter-row').forEach(row => {
+            let fromEl = row.querySelector('.ul-from');
+            let toEl = row.querySelector('.ul-to');
+            let divEl = row.querySelector('.ul-div');
+            let from = fromEl ? fromEl.value.trim() : '';
+            let to = toEl ? toEl.value.trim() : '';
+            let div = divEl ? parseFloat(divEl.value) : NaN;
+            if (!from || !to || !isFinite(div) || div <= 0) return;
+            map[from] = { to: to, div: div };
+        });
+        dashboardConfig.unitLadders = map; // 覆盖内置默认中同名的当前单位
     }
 
     function addSlicer() {
@@ -9591,7 +10048,7 @@ function applyChartAnalyticsI18N() {
             // 于是卡片间隙、页脚、页面四边都泛出 #F2F2F2 灰底（卡片因自带不透明白底而看着正常）。
             // 捕获期间临时禁用 box-shadow，捕获结束后还原。
             let banishShadowStyle = document.createElement('style');
-            banishShadowStyle.textContent = '#dashboard, #dashboard * { box-shadow: none !important; }';
+            banishShadowStyle.textContent = '#dashboard, #dashboard * { box-shadow: none !important; } #dashboard .remove-btn { display: none !important; }';
             document.head.appendChild(banishShadowStyle);
 
             let scale = Math.min(2, window.devicePixelRatio || 1);
@@ -12073,7 +12530,7 @@ function setupOverlaySwipe() {
     /** 取指定语言下生效的全盘综述：优先自定义，其次当前页面上自动生成的综述 */
     function getEffectiveSummaryText(lang) {
         try {
-            let custom = (lang === 'en') ? (dashboardConfig.dashSummaryEn || '') : (dashboardConfig.dashSummaryZh || '');
+            let custom = (lang === 'en') ? fillSummaryTemplate(dashboardConfig.dashSummaryEn || '', true) : fillSummaryTemplate(dashboardConfig.dashSummaryZh || '', false);
             if (String(custom).trim()) return String(custom);
             if ((window.currentLang || 'zh') === lang) {
                 let box = document.getElementById('executiveSummary');
@@ -12486,3 +12943,4 @@ function setupOverlaySwipe() {
 </script>
 </body>
 </html>
+
