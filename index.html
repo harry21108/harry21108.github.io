@@ -7,7 +7,10 @@
 <title>Sxcoal 行业数据与市场分析仪表盘</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" data-page-node-id="2A7qcGwgki8SxSunGTavya">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin data-page-node-id="0fyWB8JYGLluPQwJzj7tQX">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" data-page-node-id="xwzJMptj1u0WOjJ5wvLN1r">
+<!-- 第六十五轮：字体样式表改异步加载（media=print 加载完再应用）。渲染阻塞型字体 CSS 在国内网络
+     会挂起 30~150 秒，并把排在它后面的所有 <script> 一起拖住 —— 导出页/嵌入页"打开很慢、图表半天才出"的主因。 -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" data-page-node-id="xwzJMptj1u0WOjJ5wvLN1r">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
@@ -463,8 +466,14 @@
     }
     .analytics-pill.active .pill-check { background: #FFFFFF; color: var(--brand-red, #B23E19); border-color: #FFFFFF; }
 
-    .landscape { width: 95vw !important; max-width: none !important; height: 95vh !important; max-height: none !important; }
-    .landscape #chartOverlayContainer { height: calc(95vh - 60px) !important; }
+    /* 第六十五轮：.landscape 锚定到视口左上角（position:fixed + left/top:0）。
+       原先只设宽高、位置靠 .modal-overlay 的 flex 居中 —— 居中按"布局视口"计算，
+       在部分 App WebView / 旋屏未重算的浏览器里布局视口与可视视口不一致（980px 默认值或横屏残留宽度），
+       弹层会被居中到屏幕右侧之外（App 内横屏"完全乱了"的实锤截图：白色弹层漂在右半边）。
+       固定到左上角 + 铺满视口后，无论布局视口多宽，弹层始终从可视区左上角铺开。 */
+    .landscape { position: fixed !important; left: 0 !important; top: 0 !important; margin: 0 !important;
+        width: 100vw !important; max-width: none !important; height: 100vh !important; max-height: none !important; border-radius: 0 !important; }
+    .landscape #chartOverlayContainer { height: calc(100vh - 60px) !important; }
     /* 仪表盘放大弹层顶部按钮：紧贴右侧、紧凑尺寸，与嵌入页放大弹层同款
        （padding 收紧、min-width 26px、内嵌 SVG 显式 14x14）；
        chartOverlayModal 顶部按钮栏是 inline-style div，没有 .head 类，用 button.icon-btn 选择器直接定位 */
@@ -532,8 +541,8 @@
        图表按横向渲染，避免竖屏下 95vh/100vh 把图表纵向拉成长条（用户截图反馈）。
        放在 768px 媒体查询之后以覆盖其中 .landscape 的 100vh 高度。 */
     @media (orientation: portrait) {
-        .landscape { height: min(95vh, 56vw) !important; }
-        .landscape #chartOverlayContainer { height: calc(min(95vh, 56vw) - 60px) !important; }
+        .landscape { height: min(100vh, 56vw) !important; }
+        .landscape #chartOverlayContainer { height: calc(min(100vh, 56vw) - 60px) !important; }
     }
 
 </style>
@@ -1628,6 +1637,36 @@
         return allDatesSorted.length > 0;
     }
 
+    // 第六十五轮：模板映射对账。「加载模板 → 上传新月度 Excel」的工作流下，
+    // processExcel 里的 autoDetectRelationships 会整体重建 modelRelationships ——
+    // 自动识别按列名/列值配不上英文列时 pairs[].en 全空（映射弹窗"英文/通用列"全部显示"无"），
+    // 模板里保存好的中英映射就这样丢了。这里在自动识别后，用模板里保存的映射按维度表对账回填：
+    // 只回填当前维度表里仍然存在的列，结构变化过大的表保留自动识别结果。
+    function reconcileTemplateRelationships(consume) {
+        try {
+            let tplRels = window.__templateModelRelationships;
+            if (!Array.isArray(tplRels) || !tplRels.length) return;
+            modelRelationships.forEach(rel => {
+                let tpl = tplRels.find(t => t && t.dimSheet === rel.dimSheet);
+                if (!tpl || !Array.isArray(tpl.pairs) || !tpl.pairs.length) return;
+                let colsSet = new Set((dimensionSheets.find(d => d.name === rel.dimSheet) || { cols: [] }).cols || []);
+                let pairs = tpl.pairs.filter(p => p && ((p.zh && colsSet.has(p.zh)) || (p.en && colsSet.has(p.en))));
+                if (!pairs.length) return;
+                rel.pairs = pairs;
+                if (Array.isArray(tpl.zhCols)) rel.zhCols = tpl.zhCols.filter(c => colsSet.has(c));
+                if (Array.isArray(tpl.enCols)) rel.enCols = tpl.enCols.filter(c => colsSet.has(c));
+                if (tpl.factKey && colsSet.has(tpl.factKey)) {
+                    rel.factKey = tpl.factKey;
+                    if (tpl.dimKey && colsSet.has(tpl.dimKey)) rel.dimKey = tpl.dimKey;
+                }
+                if (tpl.sortBy && typeof tpl.sortBy === 'object') rel.sortBy = tpl.sortBy;
+                if (typeof tpl.active === 'boolean') rel.active = tpl.active;
+            });
+            // consume=false：只对账不销毁留档（loadTemplate 阶段），留待之后上传 Excel 时再用一次
+            if (consume !== false) window.__templateModelRelationships = null;
+        } catch (e) { console.warn('[模板] 映射对账失败：', e); }
+    }
+
     function autoDetectRelationships(sheetNames) {
         dimensionSheets = []; dimensionColumns = []; modelRelationships = [];
         let factSheet = sheetNames[0];
@@ -1951,6 +1990,7 @@
                 if(!json || !json.length) { loadingOverlay.style.display = 'none'; return alert("上传的事实表无有效数据！"); }
 
                 autoDetectRelationships(sheetNames);
+                reconcileTemplateRelationships(); // 第六十五轮：模板里保存的映射优先于自动识别
                 buildDictionaryFromRelationships();
 
                 columns = Object.keys(json[0]);
@@ -9105,6 +9145,9 @@ function applyChartAnalyticsI18N() {
         if (!content) return;
         content.classList.add('landscape');
         overlayReturningFromLandscape = true;   // 本次弹层进过横屏，退出时要重建列表图表
+        // 第六十五轮：.landscape 加上后容器尺寸立即变化，必须在多个时点重绘弹层图表，
+        // 否则旋屏慢的 WebView 里 canvas 仍是竖屏几何（实测 overlay 实例 getWidth()=0）
+        scheduleOverlayResizes();
         if (!isTouchDevice()) return;
         try {
             let req = content.requestFullscreen || content.webkitRequestFullscreen;
@@ -9131,6 +9174,7 @@ function applyChartAnalyticsI18N() {
         let doUnlock = () => { try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {} };
         doUnlock();
         setTimeout(doUnlock, 350);
+        scheduleOverlayResizes(); // 第六十五轮：退出横屏时容器尺寸变化，同步重绘弹层图表
     }
 
     // 第二十四轮引入，第二十八轮置空：
@@ -10664,7 +10708,8 @@ function generateChartEmbedCode(chartId) {
 <title>${escapeHtml(title)} · ${escapeHtml(langText)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 <style>
 * { box-sizing: border-box; }
 @font-face-not-used { font-family: 'source-han-sans-sc'; src: local('Source Han Sans SC Normal'); }
@@ -11891,6 +11936,8 @@ function setupOverlaySwipe() {
                 translationDict = payload.translationDict || {};
                 dashboardConfig = normalizeDashboardLocalFilters(payload.dashboardConfig || dashboardConfig);
                 modelRelationships = payload.modelRelationships || [];
+                // 第六十五轮：留档模板映射，供之后上传 Excel 时对账回填（见 reconcileTemplateRelationships）
+                window.__templateModelRelationships = JSON.parse(JSON.stringify(payload.modelRelationships || []));
                 // 关键：dimensionSheets / dimensionColumns / rawWorkbookData 与当前 Excel 强绑定，
                 // 不能用旧模板里保存的版本覆盖（用户反馈"导入模板后 X 轴下拉字段不全"）。
                 // - 有 Excel 数据：完全用当前的（重新派生），丢掉模板里的旧值；
@@ -11905,6 +11952,8 @@ function setupOverlaySwipe() {
                     dimensionColumns = payload.dimensionColumns || [];
                     window.rawWorkbookData = payload.rawWorkbookData || {};
                 }
+                // 第六十五轮：当前 Excel 的维度列与模板映射对账，剪掉已不存在的列（显示列下拉不再错位）
+                reconcileTemplateRelationships(false);
                 window.currentLang = payload.currentLang || 'zh';
                 window.storedRawData = rawData; window.storedTranslationDict = translationDict; window.storedConfig = dashboardConfig;
                 window.modelRelationships = modelRelationships; window.dimensionSheets = dimensionSheets; window.dimensionColumns = dimensionColumns;
@@ -12707,6 +12756,27 @@ function setupOverlaySwipe() {
                 exportRoot.querySelectorAll(sel).forEach(el => { if (el.parentNode) el.parentNode.removeChild(el); });
             });
 
+            // 第六十五轮：导出副本在数据脚本重渲染前就会先展示（obf 模式保留现成 DOM），
+            // 克隆自编辑态的节点带着 全部 功能按钮 —— 移动端上"打开时先闪现全部功能小图标、
+            // 数据脚本重渲染后才变成四个交互图标"。这里静态剔除编辑类按钮/删除号，加载即干净。
+            // KPI 卡片的操作按钮导出态整体不存在，连同 .ctrls 容器一起删。
+            try {
+                exportRoot.querySelectorAll('.kpi-card .ctrls').forEach(el => { if (el.parentNode) el.parentNode.removeChild(el); });
+                exportRoot.querySelectorAll('.vis-wrapper .ctrls button').forEach(btn => {
+                    let oc = btn.getAttribute('onclick') || '';
+                    if (/editChart|duplicateChart|removeChart|copyChartEmbedCode/.test(oc) && btn.parentNode) btn.parentNode.removeChild(btn);
+                });
+                exportRoot.querySelectorAll('.remove-btn').forEach(el => { if (el.parentNode) el.parentNode.removeChild(el); });
+            } catch (e) { console.warn('[导出] 编辑按钮剔除失败：', e); }
+
+            // 第六十五轮：导出页没有上传/模板入口，xlsx.full.min.js（约 900KB 解析开销）永远不会被用到，
+            // 从副本里移除，缩短移动端脚本解析与 DCL 时间（echarts/html2canvas 下载复制图仍需要，保留）。
+            try {
+                exportRoot.querySelectorAll('script[src]').forEach(s => {
+                    if (/xlsx/i.test(s.getAttribute('src') || '') && s.parentNode) s.parentNode.removeChild(s);
+                });
+            } catch (e) { console.warn('[导出] xlsx 脚本移除失败：', e); }
+
             // 第五十轮：导出页 <head> 写入 description（= 全盘综述）与 keywords（大标题 + 综述里提取的名词性词/词组）
             try {
                 const exportHead = exportRoot.querySelector('head');
@@ -12868,8 +12938,16 @@ function setupOverlaySwipe() {
         });
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', () => {
-                // 弹层开着或正在重建期间不要动列表实例，避免用横屏宽度重绘
-                if (overlayChartId || isRestoringDashboardCharts) return;
+                // 弹层开着时不能再跳过：旋屏/全屏进出会改变可视视口，
+                // 需要按新方向同步弹层版式并重绘弹层图表（第六十五轮：App WebView 横屏后图表宽度为 0 的根因之一）
+                if (overlayChartId) {
+                    clearTimeout(vpTimer); vpTimer = setTimeout(() => {
+                        try { syncOverlayWithOrientation(); } catch (e) {}
+                        resizeOverlayChart();
+                    }, 150);
+                    return;
+                }
+                if (isRestoringDashboardCharts) return;
                 clearTimeout(vpTimer); vpTimer = setTimeout(resizeAllCharts, 150);
             });
         }
@@ -12884,7 +12962,9 @@ function setupOverlaySwipe() {
         // 布局宽度长期与可视宽度不符时，浏览器不会再派发 resize —— 用低频轮询兜底松钉并重画
         setInterval(() => {
             try {
-                if (isRestoringDashboardCharts || overlayChartId) return;
+                // 第六十五轮：弹层开着时只维护弹层图表自身（旋转后 canvas 宽度可能残留旧几何），不动列表实例
+                if (overlayChartId) { resizeOverlayChart(); return; }
+                if (isRestoringDashboardCharts) return;
                 if (maybeReleaseLayoutPin()) resizeAllCharts();
                 // 兜底：标记还在（例如上一次调用时弹层/全屏未退出而直接跳过），条件具备时补一次重建
                 if (overlayReturningFromLandscape) { restoreDashboardChartsAfterLandscape(); return; }
