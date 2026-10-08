@@ -4578,8 +4578,14 @@
         let candidate = min - (max - min) * padRatio;
         if (candidate <= 0) return null;
         // 向下取整到最近的“漂亮”刻度
+        // 第六十四轮：浮点噪声修正。candidate<1 时 magnitude=0.1/0.01…，candidate/magnitude 会带
+        // IEEE754 噪声（如 0.614/0.1=6.139999…，floor 后 6*0.1=0.6000000000000001）。这个脏 min
+        // 传给 ECharts 后，轴底部刻度会渲染成 0.6000 这类不一致的小数位（其余刻度 0.8/1/1.2 正常）。
+        // 先加 epsilon 兜住“恰好落在整数上”的边界，再把结果按量级对应的小数位收整成干净数。
         let magnitude = Math.pow(10, Math.floor(Math.log10(candidate)));
-        let niceMin = Math.floor(candidate / magnitude) * magnitude;
+        let steps = Math.floor(candidate / magnitude + 1e-9);
+        let dec = Math.max(0, -Math.floor(Math.log10(magnitude) + 1e-9));
+        let niceMin = Number((steps * magnitude).toFixed(dec));
         return niceMin > 0 ? niceMin : null;
     }
 
