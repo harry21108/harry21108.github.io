@@ -704,8 +704,8 @@
                 <div class="gs-pane active" id="summary_cn">
                     <div class="gs-sec">
                         <div class="gs-sec-h" id="summaryCnLabel">自定义全盘综述（中文 · 支持占位符自动填充）</div>
-                        <textarea id="gSummaryZh" rows="3" placeholder="中文综述文本（支持HTML）。占位符：{period} 最新期｜{col:列名} 最新值(已带单位)｜{row:列名|品类} 品类值(多品类用、或,合并求和；!品类=排除该项，如 !炼焦煤)｜{yoy:列名}/{mom:列名}/{wow:列名}/{dod:列名} 同比/月环比/周环比/日环比｜{cum:列名} 累计(已带单位)｜{cumpct:列名} 累计同比。列名用看板显示名，可省略单位后缀；{col}/{cum}已含单位且大数自动升档(万吨→亿吨)，模板勿重复写单位；留空则系统自动生成。"></textarea>
-                        <div style="font-size:11px; color:#6B7280; margin-top:4px; line-height:1.6;">例：<code style="background:#F3F4F6; padding:0 4px; border-radius:3px;">{period}，中国煤炭进口量{col:当月进口量}，同比{yoy:当月进口量}、月环比{mom:当月进口量}；其中动力煤{row:当月进口量|!炼焦煤}、炼焦煤{row:当月进口量|炼焦煤}。1-8月累计{cum:当月进口量}，同比{cumpct:当月进口量}。</code> 周/日环比 {wow}/{dod} 仅当日度/周度数据有上期时生效，其它粒度留空。</div>
+                        <textarea id="gSummaryZh" rows="3" placeholder="中文综述文本（支持HTML）。占位符：{period} 最新期｜{col:列名} 最新值(已带单位)｜{row:列名|品类} 品类值｜{yoy:列名}/{mom:列名}/{wow:列名}/{dod:列名} 同比/月环比/周环比/日环比｜{cum:列名} 累计(已带单位)｜{cumpct:列名} 累计同比。**除 {period} 外都可加 “|品类”**：多品类用 、，, ; + 分隔合并求和，!前缀=排除（如 !炼焦煤）。列名用看板显示名，可省略单位后缀；{col}/{cum}已含单位且大数自动升档(万吨→亿吨)，模板勿重复写单位；留空则系统自动生成。"></textarea>
+                        <div style="font-size:11px; color:#6B7280; margin-top:4px; line-height:1.6;">例：<code style="background:#F3F4F6; padding:0 4px; border-radius:3px;">{period}，中国煤炭进口量{col:当月进口量}，同比{yoy:当月进口量}、月环比{mom:当月进口量}；其中动力煤{row:当月进口量|!炼焦煤}、炼焦煤{row:当月进口量|炼焦煤}。1-8月累计{cum:当月进口量}，同比{cumpct:当月进口量}。</code><br>品类的同比/环比同样加 |品类：<code style="background:#F3F4F6; padding:0 4px; border-radius:3px;">{yoy:出口量|27011200 - Bituminous Coal、27011900 - Other Coal}</code>　⚠️ 品类名自带的空格要原样保留，分隔符只用 、，, ; +（不要只靠空格分隔）。周/日环比 {wow}/{dod} 仅当日度/周度数据有上期时生效，其它粒度留空。</div>
                     </div>
                     <div class="footer-cfg-part">
                         <div class="gs-sec-h plain" id="footerCnLabel">页脚 · 中文（免责声明 / 联系方式 / 社媒 / 二维码）</div>
@@ -738,7 +738,7 @@
                 <div class="gs-pane" id="summary_en">
                     <div class="gs-sec">
                         <div class="gs-sec-h" id="summaryEnLabel">Executive summary (English · placeholder auto-fill)</div>
-                        <textarea id="gSummaryEn" rows="3" placeholder="English summary text (HTML supported). Placeholders: {period} latest period｜{col:Field} latest value｜{row:Field|Category} category value (prefix ! to EXCLUDE, e.g. !Coking coal)｜{yoy:Field}/{mom:Field}/{wow:Field}/{dod:Field} YoY/MoM/WoW/DoD｜{cum:Field} YTD｜{cumpct:Field} YTD YoY. Units auto-scale (10k t→Mt, Mt→Bt; 亿千瓦时→TWh→PWh); blank = auto-generated."></textarea>
+                        <textarea id="gSummaryEn" rows="3" placeholder="English summary text (HTML supported). Placeholders: {period} latest period｜{col:Field} latest value｜{row:Field|Category} category value (prefix ! to EXCLUDE, e.g. !Coking coal)｜{yoy:Field}/{mom:Field}/{wow:Field}/{dod:Field} YoY/MoM/WoW/DoD｜{cum:Field} YTD｜{cumpct:Field} YTD YoY. All field placeholders accept “|Category” (combine with 、,，; + or exclude with !). Units auto-scale (10k t→Mt, Mt→Bt; 亿千瓦时→TWh→PWh); blank = auto-generated."></textarea>
                         <div style="font-size:11px; color:#6B7280; margin-top:4px; line-height:1.6;">e.g. <code style="background:#F3F4F6; padding:0 4px; border-radius:3px;">In {period}, China {col:Coal Imports} reached {col:Coal Imports}, YoY {yoy:Coal Imports}; {row:Coal Imports|Thermal coal}, {row:Coal Imports|Coking coal}. YTD {cum:Coal Imports}, YoY {cumpct:Coal Imports}.</code> {wow}/{dod} work only for weekly/daily data; for other granularities they render empty.</div>
                     </div>
                     <div class="footer-cfg-part">
@@ -2946,11 +2946,14 @@
     //   {period}            最新期标签，如「2026年8月」(Aug 2026)
     //   {col:列名}          该列最新期(全部/合计)数值，带单位
     //   {row:列名|品类}     该列最新期指定品类行的数值，带单位
-    //   {yoy:列名}/{mom:列名}  该列最新期同比/环比百分比（带 ↑↓ 箭头）
+    //   {yoy:列名}/{mom:列名}/{wow:列名}/{dod:列名}  该列最新期同比/月环比/周环比/日环比（带 ↑↓ 箭头，已着色）
     //   {cum:列名}          YTD 累计（当年截至最新期求和），带单位
     //   {cumpct:列名}       YTD 累计同比（当年累计 vs 去年同区间累计）
     // 列名/品类用看板上显示的“中文名/英文名”填写，引擎反查 raw 键；未命中占位符原样保留（向后兼容纯文本/HTML）。
-    // 多品类合并：{row:列名|动力煤、炼焦煤} 用 、,， 分隔多项并求和。
+    // 第六十三轮：**所有列类占位符都支持 “|品类” 第二参数**（{row}/{col}/{yoy}/{mom}/{wow}/{dod}/{cum}/{cumpct} 均可），
+    //   写法与 {row} 完全一致：多品类用 、，, ; + 分隔并合并求和；! 前缀表示排除。
+    //   例：{yoy:出口量|27011200 - Bituminous Coal、27011900 - Other Coal}
+    //   ⚠️ 分隔符**不含空格** —— 品类名自带的空格（如 "27011200 - Bituminous Coal"）必须原样保留。
     // 排除写法：{row:列名|!炼焦煤} = 最新期除“炼焦煤”外所有品类之和；多项排除 {row:列名|!炼焦煤、!其他}。
     // 第六十一轮：自动就近单位。{col}/{cum}/{row} 数值较大时按通用阶梯自动升档（见 SUMM_UNIT_LADDERS）：
     //   中文 万吨→亿吨（≥1万）、吨→千吨→万吨；英文 万吨→Mt，Mt→Bt（≥1000，国际惯例）；电力 亿千瓦时→万亿千瓦时、TWh→PWh。
@@ -3067,26 +3070,57 @@
         let use = detail.length ? detail : rows;
         return summFmt(calcValueForField(use, col, 'sum', {}), col, isEn);
     }
-    function summRowLatest(col, cat, isEn) {
-        // 多品类合并求和：动力煤=无烟煤+其他烟煤+…（分隔符  、 ， , 空格）
-        // 排除写法：以 ! 开头的品类表示“排除该项”，如 !炼焦煤 = 除炼焦煤外的所有品类之和；多项 !炼焦煤、!其他
-        let raws = String(cat || '').split(/[、，,\s]+/).map(t => t.trim()).filter(Boolean);
-        if (!raws.length) return '-';
-        let excludeMode = raws.some(r => r.charAt(0) === '!');
-        let cats = raws.map(r => summResolveCat(r.replace(/^!/, ''), isEn ? 'en' : 'zh')).filter(Boolean);
-        if (!cats.length) return '-';
-        let rows = summLatestPeriodRows();
-        let detail = rows.filter(d => !isTotalRow(d));
-        let pool = detail.length ? detail : rows; // 优先用明细行，避免“合计”行被重复计入
-        let matched = pool.filter(d => {
-            let hit = Object.keys(d).some(c => {
-                if (d[c] === null || d[c] === undefined) return false;
-                let mv = getMappedValue(d[c], isEn ? 'en' : 'zh');
-                return cats.some(t => mv === t || summNormName(d[c]) === summNormName(t));
+    // 第六十三轮：品类列表切分与匹配。
+    // ⚠️ 关键：分隔符只认 、 ， , ; ； + —— **绝不能按空格切**，因为品类名本身常带空格
+    // （如海关口径 "27011200 - Bituminous Coal"）。旧实现按 \s 切分，把这类品名拆成
+    // "27011200" / "-" / "Bituminous" / "Coal" 四段，导致永远匹配不上、{row} 渲染成 "-"。
+    function summSplitCats(cat) {
+        return String(cat || '').split(/[、，,;；+]+/).map(t => t.trim()).filter(Boolean);
+    }
+    // 解析品类规格 → { cats:[取值…], excludeMode:bool }；! 前缀 = 排除该项
+    function summCatSpec(cat, isEn) {
+        let raws = summSplitCats(cat);
+        if (!raws.length) return null;
+        let excludeMode = raws.some(r => r.charAt(0) === '!' || r.charAt(0) === '！');
+        let cats = raws.map(r => summResolveCat(r.replace(/^[!！]/, ''), isEn ? 'en' : 'zh')).filter(Boolean);
+        if (!cats.length) return null;
+        return { cats: cats, excludeMode: excludeMode };
+    }
+    // 单行是否命中品类：先精确（映射值/规范化后全等），loose=true 时再退到“互相包含”
+    function summRowHitCat(d, cats, isEn, loose) {
+        return Object.keys(d).some(c => {
+            let v = d[c];
+            if (v === null || v === undefined) return false;
+            let mv = getMappedValue(v, isEn ? 'en' : 'zh');
+            return cats.some(t => {
+                if (mv === t) return true;
+                let a = summNormName(v), b = summNormName(t);
+                if (a === b) return true;
+                if (loose && a && b && (a.indexOf(b) >= 0 || b.indexOf(a) >= 0)) return true;
+                return false;
             });
-            return excludeMode ? !hit : hit;
         });
-        if (!matched.length) return '-';
+    }
+    // 在给定行集里按品类规格挑行：优先明细行（避开“合计”重复计数）；
+    // 精确匹配全落空时才回退包含匹配（用户可能只写了品名片段，如 "Bituminous Coal"）。
+    // 返回 null = 规格无效；返回 [] = 有效但没匹配到任何行。
+    function summPickRowsByCat(pool, cat, isEn) {
+        let spec = summCatSpec(cat, isEn);
+        if (!spec) return null;
+        let src = (pool || []).slice();
+        let detail = src.filter(d => !isTotalRow(d));
+        let base = detail.length ? detail : src;
+        let hit = base.filter(d => summRowHitCat(d, spec.cats, isEn, false));
+        if (!hit.length) hit = base.filter(d => summRowHitCat(d, spec.cats, isEn, true));
+        if (spec.excludeMode) return base.filter(d => hit.indexOf(d) === -1);
+        return hit;
+    }
+    // 多品类合并求和：动力煤=烟煤+其他煤（分隔符 、 ， , ; ； +）
+    // 排除写法：!炼焦煤 = 除炼焦煤外所有品类之和；多项 !炼焦煤、!其他
+    function summRowLatest(col, cat, isEn) {
+        let rows = summLatestPeriodRows();
+        let matched = summPickRowsByCat(rows, cat, isEn);
+        if (!matched || !matched.length) return '-';
         return summFmt(calcValueForField(matched, col, 'sum', {}), col, isEn);
     }
     // 第六十二轮：同环比箭头着色。
@@ -3104,29 +3138,51 @@
         let arrow = r > 0 ? '↑' : '↓';
         return `<span style="color:${color};font-weight:700;">${arrow}${Math.abs(r).toFixed(2)}%</span>`;
     }
-    function summRate(col, rateType, isEn) {
+    // 第六十三轮：同环比/累计类占位符支持「|品类」第二参数（与 {row} 同款语法，含 ! 排除、多品类合并）。
+    // 写法：{yoy:出口量|27011200 - Bituminous Coal、27011900 - Other Coal}
+    // 实现：先把行集收敛到该品类子集，再交给 calcAutoPeriodRate —— 当期/前期都只统计该品类。
+    function summRate(col, rateType, isEn, cat) {
         if (!dateColumn || !maxDateStr) return '';
-        let r = calcAutoPeriodRate({ rows: filteredData, xField: dateColumn, xValue: maxDateStr, valueField: col, agg: 'sum', rateType: rateType });
+        let rows = filteredData || [];
+        if (cat) {
+            let m = summPickRowsByCat(rows, cat, isEn);
+            if (!m || !m.length) return '';
+            rows = m;
+        }
+        let r = calcAutoPeriodRate({ rows: rows, xField: dateColumn, xValue: maxDateStr, valueField: col, agg: 'sum', rateType: rateType });
         if (r === null || isNaN(r)) return '';
         return summRateSpan(r, isEn);
     }
-    function summYtd(col, isEn) {
+    function summYtd(col, isEn, cat) {
         if (!dateColumn || !maxDateStr) return '-';
         let year = maxDateStr.slice(0, 4);
         let rows = (filteredData || []).filter(d => String(d[dateColumn] || '').indexOf(year) === 0);
-        let detail = rows.filter(d => !isTotalRow(d));
-        let use = detail.length ? detail : rows;
+        let use;
+        if (cat) {
+            let m = summPickRowsByCat(rows, cat, isEn);
+            if (!m || !m.length) return '-';
+            use = m;
+        } else {
+            let detail = rows.filter(d => !isTotalRow(d));
+            use = detail.length ? detail : rows;
+        }
         return summFmt(calcValueForField(use, col, 'sum', {}), col, isEn);
     }
-    function summYtdRate(col, isEn) {
+    function summYtdRate(col, isEn, cat) {
         if (!dateColumn || !maxDateStr) return '';
         let year = maxDateStr.slice(0, 4), prevYear = String(Number(year) - 1);
         let prevEnd = prevYear + maxDateStr.slice(4); // 累计同比只取去年同期区间（截至去年同日），避免去年全年数据稀释
-        let cur = (filteredData || []).filter(d => String(d[dateColumn] || '').indexOf(year) === 0);
-        let prev = (filteredData || []).filter(d => { let v = String(d[dateColumn] || ''); return v.indexOf(prevYear) === 0 && v <= prevEnd; });
-        let cd = cur.filter(d => !isTotalRow(d)), pd = prev.filter(d => !isTotalRow(d));
-        let cUse = cd.length ? cd : cur, pUse = pd.length ? pd : prev;
-        let c = calcValueForField(cUse, col, 'sum', {}), p = calcValueForField(pUse, col, 'sum', {});
+        let curAll = (filteredData || []).filter(d => String(d[dateColumn] || '').indexOf(year) === 0);
+        let prevAll = (filteredData || []).filter(d => { let v = String(d[dateColumn] || ''); return v.indexOf(prevYear) === 0 && v <= prevEnd; });
+        let cur, prev;
+        if (cat) {
+            cur = summPickRowsByCat(curAll, cat, isEn); prev = summPickRowsByCat(prevAll, cat, isEn);
+            if (!cur || !prev || !cur.length || !prev.length) return '';
+        } else {
+            let cd = curAll.filter(d => !isTotalRow(d)), pd = prevAll.filter(d => !isTotalRow(d));
+            cur = cd.length ? cd : curAll; prev = pd.length ? pd : prevAll;
+        }
+        let c = calcValueForField(cur, col, 'sum', {}), p = calcValueForField(prev, col, 'sum', {});
         if (c === null || p === null || isNaN(c) || isNaN(p) || p === 0) return '';
         let r = (c - p) / p * 100;
         return summRateSpan(r, isEn);
@@ -3134,17 +3190,20 @@
     function fillSummaryTemplate(tpl, isEn) {
         if (!tpl) return '';
         let lang = isEn ? 'en' : 'zh';
+        // 第六十三轮：所有「列类」占位符统一支持 `列名|品类` 第二参数（! 前缀=排除，、/，/, 分隔多项）
+        let splitArg = a => String(a || '').split('|');
         return tpl.replace(/\{(\w+)(?::([^}]*))?\}/g, function (m, type, arg) {
+            let p = splitArg(arg), c = summResolveColumn(p[0], lang), cat = p[1] || '';
             switch (type) {
                 case 'period': return formatDateLabel(maxDateStr, isEn);
-                case 'col': return summColLatest(summResolveColumn(arg, lang), isEn);
-                case 'row': { let p = String(arg || '').split('|'); return summRowLatest(summResolveColumn(p[0], lang), p[1] || '', isEn); }
-                case 'yoy': return summRate(summResolveColumn(arg, lang), 'yoy', isEn);
-                case 'mom': return summRate(summResolveColumn(arg, lang), 'mom', isEn);
-                case 'wow': return summRate(summResolveColumn(arg, lang), 'wow', isEn);
-                case 'dod': return summRate(summResolveColumn(arg, lang), 'dod', isEn);
-                case 'cum': return summYtd(summResolveColumn(arg, lang), isEn);
-                case 'cumpct': return summYtdRate(summResolveColumn(arg, lang), isEn);
+                case 'col': return cat ? summRowLatest(c, cat, isEn) : summColLatest(c, isEn);
+                case 'row': return summRowLatest(c, cat, isEn);
+                case 'yoy': return summRate(c, 'yoy', isEn, cat);
+                case 'mom': return summRate(c, 'mom', isEn, cat);
+                case 'wow': return summRate(c, 'wow', isEn, cat);
+                case 'dod': return summRate(c, 'dod', isEn, cat);
+                case 'cum': return summYtd(c, isEn, cat);
+                case 'cumpct': return summYtdRate(c, isEn, cat);
                 default: return m; // 未知占位符原样保留
             }
         });
