@@ -3346,19 +3346,48 @@
         }
     }
 
+    // 第七十一轮（导出页首屏提速）：
+    // 原实现每判定一行都要对整个 sourceData 跑一遍 some(isTotalRow) ——
+    // 5719 行 × 多张图 × 多个筛选条件 = 千万级 isTotalRow 调用，
+    // CPU profile 实测占导出页加载期 ~20% 的自有时间（100% 主线程满载 8 秒）。
+    // 「整表是否存在合计行」只与 sourceData 本身有关，按数组身份 + 长度缓存即可。
+    let __hasTotalRowsWeak = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+    function sourceHasTotalRows(sourceData) {
+        if (!Array.isArray(sourceData)) return false;
+        let c = __hasTotalRowsWeak ? __hasTotalRowsWeak.get(sourceData) : undefined;
+        if (c !== undefined && c.len === sourceData.length) return c.val;
+        let val = sourceData.some(isTotalRow);
+        try { if (__hasTotalRowsWeak) __hasTotalRowsWeak.set(sourceData, { len: sourceData.length, val: val }); } catch (e) {}
+        return val;
+    }
+    // per-filter 的派生值（是否含"合计"选中、纯明细取值）与显示语言有关，按 filter 对象缓存 + 语言失效
+    let __lfPlanWeak = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+    function getLocalFilterPlan(filter) {
+        let lang = window.currentLang;
+        let plan = __lfPlanWeak ? __lfPlanWeak.get(filter) : null;
+        if (plan && plan.lang === lang && plan.src === getLocalFilterValues(filter)) return plan;
+        let values = getLocalFilterValues(filter);
+        let hasTotalSelection = values.some(value => isTotalSelectionValue(value) || isTotalSelectionValue(getMappedValue(value, lang)));
+        let detailValues = hasTotalSelection
+            ? values.filter(value => !isTotalSelectionValue(value) && !isTotalSelectionValue(getMappedValue(value, lang)))
+            : values;
+        plan = { lang: lang, src: values, values: values, hasTotalSelection: hasTotalSelection, detailValues: detailValues };
+        try { if (__lfPlanWeak) __lfPlanWeak.set(filter, plan); } catch (e) {}
+        return plan;
+    }
+
     function checkLocalFilters(row, localFilters, sourceData = null) {
         if(!localFilters || localFilters.length === 0) return true;
+        let hasRealTotalRows = sourceHasTotalRows(sourceData);
         for(let f of localFilters) {
-            let values = getLocalFilterValues(f);
+            let plan = getLocalFilterPlan(f);
+            let values = plan.values;
             if(values.length === 0) continue;
-            // separate 模式在图表层单独按值分组，不在此处过滤
-            if(f.mode === 'separate') continue;
-            let hasTotalSelection = values.some(value => isTotalSelectionValue(value) || isTotalSelectionValue(getMappedValue(value, window.currentLang)));
-            let hasRealTotalRows = Array.isArray(sourceData) && sourceData.some(isTotalRow);
-            if (hasTotalSelection) {
+            // separate 模式在图表层单独按值分组，不在此处过滤（mode 每次实时读，避免配置被改动后缓存失效）
+            if((f.mode || 'aggregate') === 'separate') continue;
+            if (plan.hasTotalSelection) {
                 let totalMatch = hasRealTotalRows && isTotalRow(row);
-                let detailMatch = values.filter(value => !isTotalSelectionValue(value) && !isTotalSelectionValue(getMappedValue(value, window.currentLang)))
-                    .some(value => localFilterValueMatches(row[f.field], value));
+                let detailMatch = plan.detailValues.some(value => localFilterValueMatches(row[f.field], value));
                 if (!totalMatch && !detailMatch && hasRealTotalRows) return false;
                 if (totalMatch || !hasRealTotalRows) continue;
             }
@@ -12847,6 +12876,14 @@ function setupOverlaySwipe() {
                     __seenSrc.add(src);
                     if (/html2canvas/i.test(src)) s.setAttribute('defer', '');
                 });
+                // 5) Google Fonts：编辑器里字体加载完成后 onload 已把 media 翻成 'all'，
+                //    克隆进导出页就变回「渲染阻塞样式表」——字体域名不可达时会直接卡死首屏（国产手机/内网尤其明显）。
+                //    这里统一压回 media="print" + onload 翻转，导出页永远异步取字体，取不到就回退系统字体。
+                exportRoot.querySelectorAll('link[rel="stylesheet"][href*="fonts.googleapis.com"], link[rel="stylesheet"][href*="fonts.gstatic.com"]').forEach(l => {
+                    l.setAttribute('media', 'print');
+                    if (!l.getAttribute('onload')) l.setAttribute('onload', "this.media='all'");
+                });
+
                 let __expHead = exportRoot.querySelector('head');
                 if (__expHead && !__expHead.querySelector('link[rel="preconnect"][href*="cdn.jsdelivr.net"]')) {
                     let __pc = exportRoot.ownerDocument.createElement('link');
