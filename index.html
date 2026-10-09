@@ -3890,18 +3890,29 @@
                     let allDates = Array.from(new Set(baseData.map(d => String(d[dateColumn] || '')))).sort();
                     let latestDate = allDates.length ? allDates[allDates.length - 1] : '';
                     if (latestDate && currentVal !== null && !isNaN(currentVal)) {
-                        let curYear = latestDate.substring(0, 4);
-                        let prevYear = String(parseInt(curYear, 10) - 1);
-                        let monthCut = latestDate.length >= 7 ? latestDate.substring(0, 7) : '';
-                        let prevSubset = baseData.filter(d => {
-                            let ds = String(d[dateColumn] || '');
-                            if (!ds.startsWith(prevYear)) return false;
-                            return !monthCut || ds.length < 7 || ds.substring(0, 7) <= monthCut;
-                        });
-                        if (prevSubset.length > 0) {
-                            let prevVal = calcValueForField(prevSubset, kpi.field, kpi.agg, calcOpts);
-                            if (prevVal !== null && !isNaN(prevVal) && prevVal !== 0) {
-                                yoyHtml = generateRateHtml('YoY', (currentVal - prevVal) / prevVal * 100, null, true);
+                        // 第七十一轮：累计同比基准 = 去年同区间累计（截至去年同月/同季/同周/同日）。
+                        // 旧实现用整串日期比较 `ds.substring(0,7) <= monthCut`，去年任意月份
+                        // "2025-XX" <= "2026-08" 恒为真（年份前缀 2025<2026），去年 12 月也混进
+                        // "去年同期"，基准被稀释成去年全年。改用 parsePeriodKey + periodOrdinal
+                        // 把最新期平移到去年后按同颗粒度期序比较。
+                        let latestKey = parsePeriodKey(latestDate, dateColumn);
+                        let prevYearNum = latestKey ? latestKey.y - 1 : parseInt(latestDate.substring(0, 4), 10) - 1;
+                        if (!isNaN(prevYearNum) && prevYearNum > 0) {
+                            let prevYear = String(prevYearNum);
+                            let shifted = latestKey ? Object.assign({}, latestKey, { y: prevYearNum }) : null;
+                            let prevSubset = baseData.filter(d => {
+                                let ds = String(d[dateColumn] || '');
+                                if (!ds.startsWith(prevYear)) return false;
+                                if (!shifted) return true;
+                                let pk = parsePeriodKey(ds, dateColumn);
+                                if (!pk) return false;
+                                return periodOrdinal(pk, shifted.kind) <= periodOrdinal(shifted, shifted.kind);
+                            });
+                            if (prevSubset.length > 0) {
+                                let prevVal = calcValueForField(prevSubset, kpi.field, kpi.agg, calcOpts);
+                                if (prevVal !== null && !isNaN(prevVal) && prevVal !== 0) {
+                                    yoyHtml = generateRateHtml('YoY', (currentVal - prevVal) / prevVal * 100, null, true);
+                                }
                             }
                         }
                     }
@@ -6992,9 +7003,12 @@
                         return null;
                     }
                     if (groupMapY2[x]) {
-                        // 均价类（有数量权重）按加权平均；否则维持 原值/简单平均
+                        // 均价类（有数量权重）按加权平均 Σ(价×量)/Σ(量)；
+                        // 其余度量与主轴口径一致按「求和」（第十六轮曾把非合计行写成简单平均，
+                        // 月度明细多行时金额被缩成 sum/count——南非模板每月一行看不出来，印尼每月167行直接差百倍）
                         if (groupMapY2[x].sw > 0) return groupMapY2[x].spw / groupMapY2[x].sw;
-                        return groupMapY2[x].isTotal ? groupMapY2[x].value : (groupMapY2[x].sum / groupMapY2[x].count);
+                        if (groupMapY2[x].isTotal) return groupMapY2[x].value;
+                        return isPriceMetricField(config.yField2) ? (groupMapY2[x].sum / groupMapY2[x].count) : groupMapY2[x].sum;
                     }
                     return null;
                 });
