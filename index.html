@@ -1642,10 +1642,31 @@
     // 自动识别按列名/列值配不上英文列时 pairs[].en 全空（映射弹窗"英文/通用列"全部显示"无"），
     // 模板里保存好的中英映射就这样丢了。这里在自动识别后，用模板里保存的映射按维度表对账回填：
     // 只回填当前维度表里仍然存在的列，结构变化过大的表保留自动识别结果。
+    // 第七十轮：翻译列功能依赖判定。zh 列每个取值恒定对应 en 列的唯一取值、
+    // 且两侧唯一值数量一致（>1）时，认为 en 是 zh 的翻译列。
+    // 适用场景：月份名称='1月' ↔ Month='Jan'、年月名称='2011-1' ↔ YearMth='Jan 2011' ——
+    // 写法完全不同，列名配对与值序列配对都失败，但逐行依赖关系完美成立。
+    function canPairByTranslation(dimData, zhCol, enCol) {
+        if (!Array.isArray(dimData) || !dimData.length || !zhCol || !enCol) return false;
+        let map = new Map(), zhSet = new Set(), enSet = new Set();
+        for (let i = 0; i < dimData.length; i++) {
+            let r = dimData[i];
+            let z = r[zhCol], e = r[enCol];
+            if (z === undefined || z === null || z === '' || e === undefined || e === null || e === '') continue;
+            z = String(z); e = String(e);
+            zhSet.add(z); enSet.add(e);
+            let prev = map.get(z);
+            if (prev === undefined) map.set(z, e);
+            else if (prev !== e) return false;
+        }
+        return zhSet.size > 1 && zhSet.size === enSet.size;
+    }
+
     function reconcileTemplateRelationships(consume) {
         try {
             let tplRels = window.__templateModelRelationships;
             if (!Array.isArray(tplRels) || !tplRels.length) return;
+            let applied = 0;
             modelRelationships.forEach(rel => {
                 let tpl = tplRels.find(t => t && t.dimSheet === rel.dimSheet);
                 if (!tpl || !Array.isArray(tpl.pairs) || !tpl.pairs.length) return;
@@ -1653,6 +1674,24 @@
                 let pairs = tpl.pairs.filter(p => p && ((p.zh && colsSet.has(p.zh)) || (p.en && colsSet.has(p.en))));
                 if (!pairs.length) return;
                 rel.pairs = pairs;
+                applied++;
+                // 第七十轮：模板 pairs 里 zh 有值但 en 为空、而模板 enCols 还记着英文列时，
+                // 用「功能依赖」重建配对。背景：bak83 之前的版本会在上传 Excel 时把映射冲掉，
+                // 用户若在那个状态下保存过模板，pairs[].en 就永久丢了（sortBy/enCols 仍留线索），
+                // 直接回填只会把坏的 en='' 再写回来、反而盖掉自动识别的正确结果。
+                // 现在对这类行逐条尝试翻译列重建（月份名称↔Month、年月名称↔YearMth 等），
+                // 重建不出来的行保持原样（本来就是纯中文通用列）。
+                let usedEn = new Set(pairs.map(p => p.en).filter(Boolean));
+                let enCandidates = (Array.isArray(tpl.enCols) ? tpl.enCols : (Array.isArray(rel.enCols) ? rel.enCols : []))
+                    .filter(c => c && colsSet.has(c) && !usedEn.has(c));
+                if (enCandidates.length) {
+                    let dimData = (window.rawWorkbookData || {})[rel.dimSheet] || [];
+                    pairs.forEach(p => {
+                        if (!p.zh || p.en) return;
+                        let hit = enCandidates.find(ec => canPairByTranslation(dimData, p.zh, ec));
+                        if (hit) { p.en = hit; usedEn.add(hit); }
+                    });
+                }
                 if (Array.isArray(tpl.zhCols)) rel.zhCols = tpl.zhCols.filter(c => colsSet.has(c));
                 if (Array.isArray(tpl.enCols)) rel.enCols = tpl.enCols.filter(c => colsSet.has(c));
                 if (tpl.factKey && colsSet.has(tpl.factKey)) {
@@ -1662,8 +1701,12 @@
                 if (tpl.sortBy && typeof tpl.sortBy === 'object') rel.sortBy = tpl.sortBy;
                 if (typeof tpl.active === 'boolean') rel.active = tpl.active;
             });
-            // consume=false：只对账不销毁留档（loadTemplate 阶段），留待之后上传 Excel 时再用一次
-            if (consume !== false) window.__templateModelRelationships = null;
+            // 第七十轮：留档不再「用后即焚」。旧逻辑第一次上传 Excel 后就销毁档案，
+            // 用户先传错文件再传对的、或月度更新重传时，第二次 autoDetectRelationships
+            // 重建的映射英文列又会全空。现在档案常驻，每次上传都按模板对账；
+            // 用户在映射弹窗点「应用」时会把当前映射固化为新档案（见 applyModelRelationships），
+            // 手动改过的映射从此成为新的对账基准。consume 参数保留仅为兼容旧调用。
+            if (applied > 0) console.info('[模板] 映射对账：档案 ' + tplRels.length + ' 条，回填 ' + applied + ' 条');
         } catch (e) { console.warn('[模板] 映射对账失败：', e); }
     }
 
@@ -2386,6 +2429,10 @@
                 p.role = classifyColumnRole(p, rel);
             });
         });
+        // 第七十轮：用户点「应用」后，把当前映射固化为新的模板对账档案 ——
+        // 之后（重新）上传 Excel 时 reconcileTemplateRelationships 按此对账，
+        // 手动配置的中英映射不会再被自动识别冲掉，也不会因重复上传 Excel 而丢失
+        try { window.__templateModelRelationships = JSON.parse(JSON.stringify(modelRelationships)); } catch (e) {}
         buildDictionaryFromRelationships();
         enrichRawDataWithDimensions();
         closeModal('modelConfigModal');
@@ -9475,6 +9522,19 @@ function applyChartAnalyticsI18N() {
         opts = opts || {};
         // force：不一定与放大弹层有关（例如系统旋屏后布局/画布没跟上），此时只在真的对不上时重建
         if (!overlayReturningFromLandscape && !opts.force) return;
+        // 第七十一轮：桌面端跳过全量重建。横屏只是放大弹层的 position:fixed 全屏样式，
+        // 主页面几何从未改变（canvas/dataZoom 也没有横屏残留），没有移动端
+        // 「布局视口卡住 / 全屏进出改视口」的问题 —— renderCharts 全量重建纯属浪费
+        // （八张图逐个 dispose 再重 setOption，肉眼可见闪烁）。resize 兜底即可，
+        // 真有几何不符时 1500ms 轮询里的 chartsGeometryMismatch 分支仍会兜住。
+        if (!isTouchDevice()) {
+            overlayReturningFromLandscape = false;
+            isRestoringDashboardCharts = false;
+            if (dashboardRestoreTimer) { clearTimeout(dashboardRestoreTimer); dashboardRestoreTimer = null; }
+            resizeAllCharts();
+            [150, 450].forEach(t => setTimeout(resizeAllCharts, t));
+            return;
+        }
         if (dashboardRestoreTimer) { clearTimeout(dashboardRestoreTimer); dashboardRestoreTimer = null; }
         let started = Date.now();
         let lastSize = '';
@@ -12771,11 +12831,30 @@ function setupOverlaySwipe() {
 
             // 第六十五轮：导出页没有上传/模板入口，xlsx.full.min.js（约 900KB 解析开销）永远不会被用到，
             // 从副本里移除，缩短移动端脚本解析与 DCL 时间（echarts/html2canvas 下载复制图仍需要，保留）。
+            // 第七十轮（加载提速三连）：
+            // 1) terser 是导出时 minifyExportScripts 动态注入 live head 的压缩工具（loadScriptOnce），
+            //    同一会话第二次导出时会被 cloneNode 一并克隆进导出页 —— 导出页根本用不到，
+            //    却是 1.1MB 的渲染阻塞脚本（实测 TTFB 2.9s+），必须剔除；
+            // 2) 同一 src 的外链脚本只保留第一个，避免重复下载；
+            // 3) html2canvas 只在「下载图片」时用到，加 defer 解除首屏渲染阻塞；
+            // 4) head 注入 cdn.jsdelivr.net preconnect，提前完成 DNS+TCP+TLS（移动端省 0.5~1s）。
             try {
+                let __seenSrc = new Set();
                 exportRoot.querySelectorAll('script[src]').forEach(s => {
-                    if (/xlsx/i.test(s.getAttribute('src') || '') && s.parentNode) s.parentNode.removeChild(s);
+                    let src = s.getAttribute('src') || '';
+                    if (/xlsx|terser/i.test(src)) { if (s.parentNode) s.parentNode.removeChild(s); return; }
+                    if (__seenSrc.has(src)) { if (s.parentNode) s.parentNode.removeChild(s); return; }
+                    __seenSrc.add(src);
+                    if (/html2canvas/i.test(src)) s.setAttribute('defer', '');
                 });
-            } catch (e) { console.warn('[导出] xlsx 脚本移除失败：', e); }
+                let __expHead = exportRoot.querySelector('head');
+                if (__expHead && !__expHead.querySelector('link[rel="preconnect"][href*="cdn.jsdelivr.net"]')) {
+                    let __pc = exportRoot.ownerDocument.createElement('link');
+                    __pc.setAttribute('rel', 'preconnect');
+                    __pc.setAttribute('href', 'https://cdn.jsdelivr.net');
+                    __expHead.insertBefore(__pc, __expHead.firstChild);
+                }
+            } catch (e) { console.warn('[导出] 外链脚本清理失败：', e); }
 
             // 第五十轮：导出页 <head> 写入 description（= 全盘综述）与 keywords（大标题 + 综述里提取的名词性词/词组）
             try {
