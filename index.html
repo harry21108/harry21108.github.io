@@ -622,6 +622,7 @@
         <div class="gs-tabs" id="gsTabs">
             <button type="button" class="gs-tab active" id="tab_basic" onclick="switchGlobalTab('basic')">基础与来源</button>
             <button type="button" class="gs-tab" id="tab_cards" onclick="switchGlobalTab('cards')">卡片与单位</button>
+            <button type="button" class="gs-tab" id="tab_calc" onclick="switchGlobalTab('calc')">计算字段</button>
             <button type="button" class="gs-tab" id="tab_summary" onclick="switchGlobalTab('summary')">综述与页脚</button>
             <button type="button" class="gs-tab" id="tab_promo" onclick="switchGlobalTab('promo')">推广位</button>
         </div>
@@ -692,6 +693,16 @@
                     <select id="slicerFieldSel"></select>
                     <button class="btn-build" onclick="addSlicer()" id="globalSlicerAddBtn">添加</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- 计算字段：跨列四则运算生成新度量（双语），保存后进入所有度量下拉 -->
+        <div class="gs-pane" id="pane_calc">
+            <div class="form-group">
+                <label id="calcFieldTitle" style="font-weight:600;">计算字段（基于事实表列的公式 · 双语）</label>
+                <div id="calcFieldHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">用列名写四则运算（支持 + - * / 和括号）。为防列名写错，可在公式旁下拉选列后点「插入」，可反复多次（插列名 → 手敲运算符 → 再插）；下拉只列出事实表数值列。名称建议不带单位（如 平均价格），单位填入「单位」框——单位会显示在图表 Y 轴上，图例只显示名称。英文单位默认按全局「数值单位双语映射」自动推导，映射没有的（或想用自己写法）直接填「英文单位」框即可，填了就原样显示。除以 0 或空值的结果留空。保存后新字段出现在图表 Y 轴、卡片等度量下拉中，并随模板/导出保存。提示：计算字段名称含「价」（如「平均价格」）或单位形如「美元/吨」时，图表聚合会自动按数量列加权平均（Σ价×量/Σ量），口径正确。</div>
+                <div id="calcFieldRows"></div>
+                <button type="button" class="btn-build" style="margin-top:4px; font-size:12px; padding:4px 10px;" onclick="addCalcFieldRow()" id="calcFieldAddBtn">＋ 添加计算字段</button>
             </div>
         </div>
 
@@ -1050,6 +1061,11 @@
                     <div id="chartTargetGroup" style="display:none; align-items:center; gap:4px;" data-page-node-id="AXR9wZRt3LE43gx2WinqN3">
                         <span id="chartTargetLabel" style="font-size:11.5px; color:#374151;" data-page-node-id="T44lUdUnjqnDXwz0TUhnIE">目标值</span>
                         <input type="number" id="chartTargetValue" step="any" value="" style="width:96px; padding:3px 6px; font-size:12px;" placeholder="如 40000" data-page-node-id="DHeRkiYgg56ib2kqQ6T58w">
+                    </div>
+                    <div id="chartStatYearsGroup" style="display:none; align-items:center; gap:4px;">
+                        <span id="chartStatYearsLabel" style="font-size:11.5px; color:#374151;">σ带年数</span>
+                        <input type="number" id="chartStatYears" min="1" max="20" step="1" value="5" style="width:60px; padding:3px 6px; font-size:12px;">
+                        <span id="chartStatYearsHint" style="font-size:11.5px; color:#6B7280;">年 (从最新年份往前推)</span>
                     </div>
                 </div>
             </div>
@@ -1923,6 +1939,7 @@
             });
         });
         applyHeaderMap();
+        applyCalcFieldDict();
         window.storedTranslationDict = translationDict;
     }
 
@@ -1985,6 +2002,9 @@
 
         analyzeColumnTypes();
         (dimensionColumns || []).forEach(c => { if (!stringColumns.includes(c)) stringColumns.push(c); });
+
+        // 计算字段：数据/schema 就绪后物化（内部再走一次本函数重建列清单，busy 防递归）
+        try { applyCalcFields(); } catch (e) { console.warn('计算字段物化失败', e); }
     }
 
     // 第四十五轮：计算维度表注入到事实行的字段清单（合并口径与 enrichRawDataWithDimensions 完全一致）。
@@ -2497,6 +2517,9 @@
     /** 第四十四轮：提取字段名的"原始单位"（括号内优先，其次关键字回退），作为全局设置里单位映射表的键 */
     function getFieldRawUnit(fieldName) {
         if (!fieldName) return '';
+        // bak92：计算字段的独立「单位」框优先（名称与单位分离后，轴上单位从这里取）
+        let cu = getCalcFieldUnitOverride(fieldName);
+        if (cu) return cu;
         let f = String(fieldName);
         let translatedFieldName = getMappedValue(f, 'zh');
         let m = translatedFieldName.match(/[（(\[【]([^（）()\[\]【】]+)[）)\]】]/) || f.match(/[（(\[【]([^（）()\[\]【】]+)[）)\]】]/);
@@ -2538,17 +2561,26 @@
 
     function extractPureUnit(fieldName, isEn = false) {
         if(!fieldName) return '';
+        // bak92：计算字段「单位」框优先；中文直接返回该单位，英文先查单位映射、未命中再走内置规则
+        let calcUnit = getCalcFieldUnitOverride(fieldName);
         let translatedFieldName = getMappedValue(fieldName, isEn ? 'en' : 'zh');
         let unit = '';
-        let match = translatedFieldName.match(/[\(（\[【](.*?)[\)）\]】]/) || fieldName.match(/[\(（\[【](.*?)[\)）\]】]/);
-        if(match) unit = match[1];
-        else {
-            if(/万吨/.test(fieldName)) unit = '万吨';
-            else if(/元/.test(fieldName)) unit = '元/吨';
-            else if(/%|同比|环比|增幅/.test(fieldName)) unit = '%';
+        if (calcUnit) {
+            unit = calcUnit;
+        } else {
+            let match = translatedFieldName.match(/[\(（\[【](.*?)[\)）\]】]/) || fieldName.match(/[\(（\[【](.*?)[\)）\]】]/);
+            if(match) unit = match[1];
+            else {
+                if(/万吨/.test(fieldName)) unit = '万吨';
+                else if(/元/.test(fieldName)) unit = '元/吨';
+                else if(/%|同比|环比|增幅/.test(fieldName)) unit = '%';
+            }
         }
 
         if(isEn) {
+            // bak93：计算字段「英文单位」框优先——用户自定义写法直接采用，不走映射/内置推导
+            let cuEn = getCalcFieldUnitEnOverride(fieldName);
+            if (cuEn) return cuEn;
             // 第四十四轮：全局设置里的用户自定义单位映射优先，未命中再走内置规则（万吨→Mt 等就近单位原则）
             let conv = getUnitConv(fieldName);
             if (conv) return conv.en;
@@ -2576,10 +2608,40 @@
     }
 
     // 均价/单价类字段判定：字段名含"价"且单位是 每 吨 计价（元/吨、美元/吨 等）
+    // bak90：计算字段（全局设置→计算字段）名称含「价」即视为均价类——用户自定义字段通常
+    // 不带单位后缀（如「平均价格」），旧规则要求括号单位含「吨」导致判定失败，
+    // 聚合时按明细行直接求和（每月 ~70 行 × 单价 ≈ 2.4 万），正确口径是按数量加权平均。
     function isPriceMetricField(fieldName) {
         if (!fieldName || !/价/.test(String(fieldName))) return false;
+        let defs = (dashboardConfig && dashboardConfig.calcFields) || [];
+        for (let i = 0; i < defs.length; i++) {
+            if (defs[i] && (defs[i].nameZh === fieldName || defs[i].nameEn === fieldName)) return true;
+        }
         let unit = extractPureUnit(fieldName, false);
         return /吨/.test(unit || '');
+    }
+
+    // bak92：计算字段的独立「单位」值（全局设置→计算字段）。名称与单位分离后，图例只显示干净名称，
+    // 轴上单位/双语换算（getFieldRawUnit / extractPureUnit / unitMap）从这里取值；返回 '' 表示无覆盖。
+    function getCalcFieldUnitOverride(fieldName) {
+        if (!fieldName) return '';
+        let defs = (dashboardConfig && dashboardConfig.calcFields) || [];
+        for (let i = 0; i < defs.length; i++) {
+            let d = defs[i];
+            if (d && d.unit && (d.nameZh === fieldName || d.nameEn === fieldName)) return String(d.unit).trim();
+        }
+        return '';
+    }
+
+    // bak93：计算字段的「英文单位」——用户自定义优先于自动推导（unitMap/内置规则）；空则回退自动
+    function getCalcFieldUnitEnOverride(fieldName) {
+        if (!fieldName) return '';
+        let defs = (dashboardConfig && dashboardConfig.calcFields) || [];
+        for (let i = 0; i < defs.length; i++) {
+            let d = defs[i];
+            if (d && d.unitEn && (d.nameZh === fieldName || d.nameEn === fieldName)) return String(d.unitEn).trim();
+        }
+        return '';
     }
 
     /**
@@ -2757,6 +2819,8 @@
         saveUnitMapFromUI();
         // 第六十一轮：收存单位升档阶梯（大数自动进位）
         try { saveUnitLadderFromUI(); } catch (e) { console.warn('单位升档阶梯保存失败', e); }
+        // 计算字段：校验失败时保持弹窗打开，不执行保存
+        if (!saveCalcFieldsFromUI()) return;
         if(dateColumn) {
             dashboardConfig.dateRange.start = document.getElementById('gStartDate').value || dashboardConfig.dateRange.start;
             dashboardConfig.dateRange.end = document.getElementById('gEndDate').value || dashboardConfig.dateRange.end;
@@ -3294,6 +3358,13 @@
                 default: return m; // 未知占位符原样保留
             }
         });
+    }
+
+    // 图表标题占位符（bak89）：与综述同源，目前支持 {period} = 最新期标签（如 2026年8月 / Aug 2026）。
+    // 未命中的占位符原样保留；在卡片渲染、编辑保存、放大弹层、下载/复制图、嵌入页共 5 处统一调用。
+    function fillChartTitleText(text) {
+        let isEn = (window.currentLang === 'en');
+        return String(text === null || text === undefined ? '' : text).replace(/\{period\}/g, formatDateLabel(maxDateStr, isEn));
     }
 
     function generateExecutiveSummary() {
@@ -3985,7 +4056,7 @@
                 <div class="vis-wrapper">
                     ${chartCtrls}
                     <div class="vis-header">
-                        <div class="chart-title" id="title_${cConfig.id}">${titleText}</div>
+                        <div class="chart-title" id="title_${cConfig.id}">${fillChartTitleText(titleText)}</div>
                     </div>
                     <div class="chart-container" id="chart_${cConfig.id}"></div>
                     <div class="chart-source" id="src_${cConfig.id}" style="${srcItalicEn}">
@@ -4309,7 +4380,7 @@
         });
     }
     function switchGlobalTab(id) {
-        ['basic', 'cards', 'summary', 'promo'].forEach(k => {
+        ['basic', 'cards', 'calc', 'summary', 'promo'].forEach(k => {
             let pane = document.getElementById('pane_' + k), tab = document.getElementById('tab_' + k);
             if (pane) pane.classList.toggle('active', k === id);
             if (tab) tab.classList.toggle('active', k === id);
@@ -5690,7 +5761,7 @@
         return sortedVals[lo] + (sortedVals[hi] - sortedVals[lo]) * (idx - lo);
     }
 
-    function buildStatLineSeries(config, xCount, allValues, orderedY, xKeys, histValueMap, histYears) {
+    function buildStatLineSeries(config, xCount, allValues, orderedY, xKeys, histValueMap, histYears, bandValueMap, bandYears) {
         let res = { lines: [], band: null };
         if (!config || !xCount || !allValues || allValues.length === 0) return res;
         if (!canOverlayStatLines(config)) return res;
@@ -5704,6 +5775,13 @@
         // 2) 行业语义更合理——"3 月份历史同期平均 / 中位" 比"全期总平均"更能反映季节性差异。
         let hasPerX = !!(histValueMap && histYears && histYears.length > 0 && Array.isArray(xKeys) && xKeys.length > 0);
         let perXStats = hasPerX ? computePerXStats(histValueMap, histYears, xKeys, (typeof getPeriodGranularity === 'function') ? getPeriodGranularity(config.xField) : 'month') : null;
+        // σ 带可用独立年数（statYears）：未单独配置或配置相同时直接复用参考线的 perXStats
+        let bandPerXStats = perXStats;
+        let bandYearsArr = histYears;
+        if (bandValueMap && bandValueMap !== histValueMap) {
+            bandPerXStats = computePerXStats(bandValueMap, bandYears, xKeys, (typeof getPeriodGranularity === 'function') ? getPeriodGranularity(config.xField) : 'month');
+            bandYearsArr = bandYears;
+        }
 
         // 兼容 fall-back：perXStats 拿不出有效值时回到全局
         let mean = vals.reduce((s, v) => s + v, 0) / vals.length;
@@ -5811,9 +5889,9 @@
         // 各月份的波动差异。fallback 到全期 std。
         if (hasChartAnalytics(config, 'std')) {
             let perXLower = null, perXBand = null, perXMeta = null;
-            if (perXStats && perXStats.length > 0) {
+            if (bandPerXStats && bandPerXStats.length > 0) {
                 perXLower = []; perXBand = []; perXMeta = [];
-                perXStats.forEach(p => {
+                bandPerXStats.forEach(p => {
                     let lo = p.stdLo, hi = p.stdHi;
                     if (lo === null || hi === null || isNaN(lo) || isNaN(hi)) {
                         perXLower.push(null); perXBand.push(null); perXMeta.push(null);
@@ -5828,7 +5906,7 @@
             if (perXLower && perXLower.some(v => v !== null)) {
                 let tu = uiText[window.currentLang] || uiText.zh;
                 // σ带也按 [YYYY-YYYY] 格式补年份区间，去掉"同期"两字，与其它辅助线视觉一致。
-                let yearRange = (histYears && histYears.length > 0) ? ` [${histYears[0]}-${histYears[histYears.length - 1]}]` : '';
+                let yearRange = (bandYearsArr && bandYearsArr.length > 0) ? ` [${bandYearsArr[0]}-${bandYearsArr[bandYearsArr.length - 1]}]` : '';
                 let bName = (tu.chartAnalyticsStd || (window.currentLang === 'en' ? '±1σ Band' : '±1σ 区间带')) + yearRange;
                 res.band = {
                     name: bName,
@@ -5842,7 +5920,7 @@
                 // 当 histYears 可用但 perXStats 全空（如 X 颗粒度无法对齐），仍补上区间，保持视觉一致。
                 let lo = mean - std, hi = mean + std;
                 let tu = uiText[window.currentLang] || uiText.zh;
-                let yearRange = (histYears && histYears.length > 0) ? ` [${histYears[0]}-${histYears[histYears.length - 1]}]` : '';
+                let yearRange = (bandYearsArr && bandYearsArr.length > 0) ? ` [${bandYearsArr[0]}-${bandYearsArr[bandYearsArr.length - 1]}]` : '';
                 let bName = (tu.chartAnalyticsStd || (window.currentLang === 'en' ? '±1σ Band' : '±1σ 区间带')) + yearRange;
                 res.band = {
                     name: bName,
@@ -5911,7 +5989,8 @@
         let t = config.type || 'line';
         if (t === 'pie' || t === 'ring-pie' || t === 'treemap' || t.indexOf('horizontal') >= 0 || t.indexOf('percent-') === 0) return null;
         let granularity = getPeriodGranularity(config.xField);
-        let histN = Math.max(1, parseInt(config.histYears) || 5);
+        // yearsOverride：σ 带可配置独立年数（statYears），与参考线共用的 histYears 区分开
+        let histN = Math.max(1, parseInt((opts && opts.yearsOverride) || config.histYears) || 5);
         let filters = config.localFilters || [];
         let yearFilters = filters.filter(f => isYearLikeField(f.field) && getLocalFilterValues(f).length > 0);
         let baseFilters = filters.filter(f => !isYearLikeField(f.field));
@@ -5990,7 +6069,18 @@
             seriesList.push(histRange.lower);
             seriesList.push(histRange.band);
         }
-        let stat = buildStatLineSeries(config, xCount, allValues, orderedY, xKeys, histValueMap, histYears);
+        // σ 带独立年数（statYears）：勾了 ±1σ 且与 histYears 不同时，为带子单独算一个区间；
+        // 参考线（avg/median/...）继续用 histYears 的同期口径
+        let bandValueMap = histValueMap, bandYears = histYears;
+        if (hasChartAnalytics(config, 'std')) {
+            let histN = Math.max(1, parseInt(config.histYears) || 5);
+            let statN = Math.max(1, parseInt(config.statYears) || 5);
+            if (statN !== histN) {
+                let bm = computeHistoricalValueMap(config, Object.assign({}, opts, { isEn: (window.currentLang === 'en'), yearsOverride: statN }));
+                if (bm) { bandValueMap = bm.valueMap; bandYears = bm.years; }
+            }
+        }
+        let stat = buildStatLineSeries(config, xCount, allValues, orderedY, xKeys, histValueMap, histYears, bandValueMap, bandYears);
         if (stat.band) {
             seriesList.push(stat.band.lower);
             seriesList.push(stat.band.band);
@@ -6893,6 +6983,40 @@
                 return seriesObj;
             });
 
+            // 堆积多系列图的移动平均：逐系列各画一条虚线会挤在一起读不出趋势，
+            // 改为对"堆叠合计"（各系列按 X 求和）做 N 期移动平均，单条虚线叠加（用户指定口径）。
+            // 百分比堆积无意义、横向条形 X 轴是数值不适合叠加 MA，均跳过。
+            if (shouldStack && !isPercent && !isHorizontal && hasChartAnalytics(config, 'ma')) {
+                let maPeriodsSub = Math.max(2, parseInt(config.maPeriods) || 3);
+                if (xData.length > maPeriodsSub) {
+                    let totalsSub = xData.map((_, i) => {
+                        let hasVal = false, sum = 0;
+                        seriesList.forEach(ser => {
+                            let v = ser.data[i];
+                            if (typeof v === 'number' && isFinite(v)) { hasVal = true; sum += v; }
+                        });
+                        return hasVal ? sum : null;
+                    });
+                    let maDataSub = totalsSub.map((val, idx, arr) => {
+                        if (idx < maPeriodsSub - 1) return null;
+                        let s2 = 0;
+                        for (let k2 = idx - maPeriodsSub + 1; k2 <= idx; k2++) {
+                            if (arr[k2] === null || arr[k2] === undefined) return null;
+                            s2 += arr[k2];
+                        }
+                        return s2 / maPeriodsSub;
+                    });
+                    if (maDataSub.some(v => v !== null)) {
+                        let maInfoSub = getPeriodUnitLabel(config.xField);
+                        let maUnitDisplaySub = (window.currentLang === 'en' ? maInfoSub.en : maInfoSub.zh);
+                        let maUnitSgSub = isEn ? (maInfoSub.enSg || maInfoSub.en) : maInfoSub.zh;
+                        let maNameSub = isEn ? `Total ${maPeriodsSub}-${maUnitSgSub} MA` : `合计${maPeriodsSub}${maUnitDisplaySub}移动平均`;
+                        seriesList.push({ name: maNameSub, type: 'line', data: maDataSub, lineStyle: { type: 'dotted', width: 2 }, symbol: 'none', showSymbol: false, symbolSize: 0, connectNulls: false, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
+                        option.color = getDynamicPalette(displaySubCats.length + 1, isLineFamily ? 'line' : 'nonLine');
+                    }
+                }
+            }
+
             let allSubValues = [];
             seriesList.forEach(s => allSubValues.push(...s.data));
             // 第六十一轮：堆积图（含横向多系列堆叠）Y 轴基线必须为 0 —— 堆叠总量只该影响轴上限，
@@ -7767,15 +7891,18 @@ function toggleAnalyticsParams() {
     let maGroup = document.getElementById('chartMaPeriodGroup');
     let histGroup = document.getElementById('chartHistYearsGroup');
     let targetGroup = document.getElementById('chartTargetGroup');
+    let statGroup = document.getElementById('chartStatYearsGroup');
     let showMa = vals.indexOf('ma') >= 0;
     let showHist = vals.indexOf('hist-range') >= 0;
     let showTarget = vals.indexOf('target') >= 0;
+    let showStd = vals.indexOf('std') >= 0;
     if (maGroup) maGroup.style.display = showMa ? 'flex' : 'none';
     if (histGroup) histGroup.style.display = showHist ? 'flex' : 'none';
     if (targetGroup) targetGroup.style.display = showTarget ? 'flex' : 'none';
+    if (statGroup) statGroup.style.display = showStd ? 'flex' : 'none';
     // 三个参数都不需要时，整块浅灰容器也隐藏，避免留下空框占位
     let paramsBox = document.getElementById('chartAnalyticsParams');
-    if (paramsBox) paramsBox.style.display = (showMa || showHist || showTarget) ? 'flex' : 'none';
+    if (paramsBox) paramsBox.style.display = (showMa || showHist || showTarget || showStd) ? 'flex' : 'none';
     // 移动期数的单位跟随当前 X 轴时间维度粒度（按当前语言本地化）
     let unitEl = document.getElementById('chartMaPeriodUnit');
     if (unitEl) {
@@ -7894,6 +8021,8 @@ function applyChartAnalyticsI18N() {
     setText('chartMaPeriodLabel', t.maPeriodLabel);
     setText('chartHistYearsLabel', t.histYearsLabel);
     setText('chartHistYearsHint', t.histYearsHint);
+    setText('chartStatYearsLabel', t.statYearsLabel || (window.currentLang === 'en' ? 'σ Band Years' : 'σ带年数'));
+    setText('chartStatYearsHint', t.statYearsHint || (window.currentLang === 'en' ? 'yrs (counting back from the latest year)' : '年 (从最新年份往前推)'));
     setText('chartTargetLabel', t.targetValueLabel);
     // analytics pill 文案本地化
     let container = document.getElementById('chartAnalyticsPills');
@@ -8413,6 +8542,7 @@ function applyChartAnalyticsI18N() {
         reconcileDateRangeWithData();
         renderUnitMapRows();
         renderUnitLadderRows();
+        renderCalcFieldRows();
         document.getElementById('gStartDate').value = dashboardConfig.dateRange.start || ''; document.getElementById('gEndDate').value = dashboardConfig.dateRange.end || '';
         // 指定时间/日期主维度列控件已移除（系统由 detectDateColumnFromData 自动识别，且手动选择对 Dim 数据无意义）。
         document.getElementById('gTitleZh').value = dashboardConfig.dashTitleZh || ''; document.getElementById('gTitleEn').value = dashboardConfig.dashTitleEn || '';
@@ -8473,6 +8603,245 @@ function applyChartAnalyticsI18N() {
         setText('footerResetBtn', t.footerResetBtn || (_isEn ? 'Restore default copy' : '恢复默认文案'));
         setText('promoEnabledLabel', t.promoEnabledLabel || (_isEn ? 'Show the promo block' : '在看板中显示推广位'));
         setText('promoResetBtn', t.promoResetBtn || (_isEn ? 'Restore default copy' : '恢复默认文案'));
+        // 计算字段区文案
+        setText('tab_calc', t.tabCalc || (_isEn ? 'Calc Fields' : '计算字段'));
+        setText('calcFieldTitle', t.calcFieldTitle || (_isEn ? 'Calculated fields (formulas over fact columns · bilingual)' : '计算字段（基于事实表列的公式 · 双语）'));
+        setText('calcFieldHint', t.calcFieldHint || (_isEn ? 'Write arithmetic over column names (+ - * / and parentheses). To avoid typos, pick a column in the dropdown next to the formula and click Insert — repeat as many times as needed; the dropdown lists numeric fact columns only. Keep the name unit-free (e.g. Avg Price) and put the unit in its own box: it shows on the chart Y-axis while the legend shows the name only. The English unit is auto-derived from the global unit mapping; if your unit is not covered (or you prefer your own notation), type it in the "Unit EN" box and it is used as-is. Division by zero or empty inputs yields blank. After saving, the new field appears in chart Y-axis / KPI dropdowns and is stored with templates and exports. Tip: calc fields whose name contains "价/price" (or with a per-ton unit like USD/t) are automatically quantity-weighted when aggregated.' : '用列名写四则运算（支持 + - * / 和括号）。为防列名写错，可在公式旁下拉选列后点「插入」，可反复多次（插列名 → 手敲运算符 → 再插）；下拉只列出事实表数值列。名称建议不带单位（如 平均价格），单位填入「单位」框——单位会显示在图表 Y 轴上，图例只显示名称。英文单位默认按全局「数值单位双语映射」自动推导，映射没有的（或想用自己写法）直接填「英文单位」框即可，填了就原样显示。除以 0 或空值的结果留空。保存后新字段出现在图表 Y 轴、卡片等度量下拉中，并随模板/导出保存。提示：计算字段名称含「价」（如「平均价格」）或单位形如「美元/吨」时，图表聚合会自动按数量列加权平均（Σ价×量/Σ量），口径正确。'));
+        setText('calcFieldAddBtn', t.calcFieldAddBtn || (_isEn ? '＋ Add calculated field' : '＋ 添加计算字段'));
+        document.querySelectorAll('#calcFieldRows .cf-ins').forEach(b => { b.textContent = _isEn ? 'Insert' : '插入'; });
+        document.querySelectorAll('#calcFieldRows .cf-colsel').forEach(s => { if (s.options.length && !s.value) s.options[0].text = _isEn ? 'Pick a column…' : '选择列名…'; });
+    }
+
+    /* ===== 计算字段（自定义派生度量）=====
+       设计要点：
+       - 公式 = 事实表列名 + 数字 + + - * / ( ) 的四则运算，递归下降解析成闭包，逐行求值；
+       - 物化：把结果写成每行的真实列（列名 = 中文名），下游（图表/卡片/聚合/单位换算/导出）
+         全部按普通事实列工作，零侵入、渲染零额外开销（只在保存/上传时 O(行数) 算一次）；
+       - 除以 0 / 空值 → 留空（null），不污染求和；
+       - 名称含「价」且单位含「/吨」时自动命中均价加权聚合（isPriceMetricField 既有逻辑）。 */
+    let __appliedCalcNames = null;
+
+    // 解析公式 → { ok, fn(row), error }。sourceColumns 为可用列名（长名优先匹配，避免前缀截断）。
+    function parseCalcFormula(formula, sourceColumns) {
+        let s = String(formula || '');
+        let cols = (sourceColumns || []).map(String).sort((a, b) => b.length - a.length);
+        let tokens = [];
+        let i = 0;
+        while (i < s.length) {
+            let ch = s[i];
+            if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') { i++; continue; }
+            if ((ch >= '0' && ch <= '9') || ch === '.') {
+                let m = s.slice(i).match(/^(?:\d+\.?\d*|\.\d+)/);
+                if (!m) return { ok: false, error: '数字格式有误（位置 ' + (i + 1) + '）' };
+                tokens.push({ t: 'num', v: parseFloat(m[0]) });
+                i += m[0].length; continue;
+            }
+            if ('+-*/()'.indexOf(ch) >= 0) { tokens.push({ t: ch }); i++; continue; }
+            let rest = s.slice(i);
+            let hit = null;
+            for (let ci = 0; ci < cols.length; ci++) { if (rest.indexOf(cols[ci]) === 0) { hit = cols[ci]; break; } }
+            if (hit) { tokens.push({ t: 'col', v: hit }); i += hit.length; continue; }
+            return { ok: false, error: '无法识别的内容「' + rest.slice(0, 14) + '」（位置 ' + (i + 1) + '）——公式里只能出现列名、数字和 + - * / ( )' };
+        }
+        if (tokens.length === 0) return { ok: false, error: '公式为空' };
+        let p = 0;
+        let numOrNull = (v) => (typeof v === 'number' && isFinite(v)) ? v : null;
+        function expr() {
+            let left = term();
+            while (p < tokens.length && (tokens[p].t === '+' || tokens[p].t === '-')) {
+                let op = tokens[p++].t, r = term(), l = left;
+                left = (row) => { let a = numOrNull(l(row)), b = numOrNull(r(row)); return (a === null || b === null) ? null : (op === '+' ? a + b : a - b); };
+            }
+            return left;
+        }
+        function term() {
+            let left = factor();
+            while (p < tokens.length && (tokens[p].t === '*' || tokens[p].t === '/')) {
+                let op = tokens[p++].t, r = factor(), l = left;
+                left = (row) => {
+                    let a = numOrNull(l(row)), b = numOrNull(r(row));
+                    if (a === null || b === null) return null;
+                    return op === '*' ? a * b : (b === 0 ? null : a / b);
+                };
+            }
+            return left;
+        }
+        function factor() {
+            if (p >= tokens.length) throw new Error('公式不完整');
+            let tk = tokens[p];
+            if (tk.t === '-') { p++; let f = factor(); return (row) => { let v = numOrNull(f(row)); return v === null ? null : -v; }; }
+            if (tk.t === '+') { p++; return factor(); }
+            if (tk.t === '(') {
+                p++; let e = expr();
+                if (!tokens[p] || tokens[p].t !== ')') throw new Error('括号不匹配');
+                p++; return e;
+            }
+            if (tk.t === 'num') { p++; let v = tk.v; return () => v; }
+            if (tk.t === 'col') { p++; let k = tk.v; return (row) => numOrNull(row ? row[k] : null); }
+            throw new Error('公式不完整');
+        }
+        let fn;
+        try { fn = expr(); if (p !== tokens.length) throw new Error('公式有多余内容'); }
+        catch (e) { return { ok: false, error: e.message || '公式解析失败' }; }
+        return { ok: true, fn: fn };
+    }
+
+    function getCalcFieldDefs() {
+        return (dashboardConfig && Array.isArray(dashboardConfig.calcFields)) ? dashboardConfig.calcFields.filter(d => d && d.nameZh && d.formula) : [];
+    }
+
+    // 计算字段的双语字典条目：中文名为数据键，英文名仅作显示
+    function applyCalcFieldDict() {
+        getCalcFieldDefs().forEach(d => {
+            translationDict[d.nameZh] = { zh: d.nameZh, en: d.nameEn || d.nameZh };
+            if (d.nameEn) translationDict[d.nameEn] = { zh: d.nameZh, en: d.nameEn };
+        });
+    }
+
+    // 物化计算字段：删旧列 → 逐行求值写新列 → 重建 columns/uniqueValuesMap/numericColumns → 补字典。
+    // 只在保存/上传等数据变化时调用；渲染路径零开销。enrichRawDataWithDimensions 末尾自动触发。
+    function applyCalcFields() {
+        if (applyCalcFields.__busy) return;
+        let defs = getCalcFieldDefs();
+        if (!rawData || rawData.length === 0) { __appliedCalcNames = defs.map(d => d.nameZh); return; }
+        if (__appliedCalcNames === null) __appliedCalcNames = defs.map(d => d.nameZh);
+        let keep = new Set(defs.map(d => d.nameZh));
+        let removedStale = false;
+        __appliedCalcNames.forEach(n => { if (!keep.has(n)) { removedStale = true; rawData.forEach(r => { delete r[n]; }); } });
+        let baseCols = (columns && columns.length ? columns.slice() : Object.keys(rawData[0]));
+        let accepted = [];
+        defs.forEach(d => {
+            delete d.__error;
+            // 允许引用排在本字段之前定义的其它计算字段（按定义顺序物化，天然满足依赖）
+            let parsed = parseCalcFormula(d.formula, baseCols.concat(accepted));
+            if (!parsed.ok) { d.__error = parsed.error; return; }
+            let fn = parsed.fn, name = d.nameZh;
+            rawData.forEach(r => { let v = fn(r); r[name] = (typeof v === 'number' && isFinite(v)) ? v : null; });
+            accepted.push(name);
+        });
+        __appliedCalcNames = accepted;
+        if (accepted.length || removedStale) {
+            applyCalcFields.__busy = true;
+            try {
+                enrichRawDataWithDimensions();
+                accepted.forEach(n => { if (!factColumns.includes(n)) factColumns.push(n); });
+                // bak95：物化后必须重算 numericColumns/stringColumns —— 否则新字段只进了 rawData/columns，
+                // 没进 numericColumns，图表/卡片的度量下拉（populateSelectOptions 只读 numericColumns）就选不到，
+                // 要等第二次点「应用并刷新全盘」经其它路径补算才出现。这里一次性补齐，首刷即用。
+                analyzeColumnTypes();
+            } finally { applyCalcFields.__busy = false; }
+        }
+        applyCalcFieldDict();
+    }
+
+    /* ===== 计算字段 UI ===== */
+    function fillCalcFieldColList() {
+        let selects = document.querySelectorAll('#calcFieldRows .cf-colsel');
+        if (!selects.length) return;
+        // bak93：公式只面向事实表数值列——剔除时间表/维度表带来的 日期序号/年份名称 等维度列
+        let cols = (Array.isArray(factColumns) && factColumns.length) ? factColumns.slice() : ((columns && columns.length) ? columns : []);
+        if (Array.isArray(numericColumns) && numericColumns.length) cols = cols.filter(c => numericColumns.includes(c));
+        let esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        selects.forEach(sel => {
+            let cur = sel.value;
+            let isEn = window.currentLang === 'en';
+            sel.innerHTML = '<option value="">' + (isEn ? 'Pick a column…' : '选择列名…') + '</option>' +
+                cols.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
+            if (cur && cols.indexOf(cur) >= 0) sel.value = cur;
+        });
+    }
+
+    // bak92：把下拉选中的列名插入公式输入框光标处（可反复多次，运算符手敲）
+    function insertCalcColumn(btn) {
+        let row = (btn && btn.closest) ? btn.closest('.calc-field-row') : null;
+        if (!row) return;
+        let sel = row.querySelector('.cf-colsel'), inp = row.querySelector('.cf-formula');
+        let col = sel ? sel.value : '';
+        if (!col || !inp) return;
+        let s = inp.selectionStart, e = inp.selectionEnd;
+        if (s === null || s === undefined) { s = e = inp.value.length; }
+        inp.value = inp.value.slice(0, s) + col + inp.value.slice(e);
+        let np = s + col.length;
+        inp.focus();
+        try { inp.setSelectionRange(np, np); } catch (err) {}
+    }
+
+    function addCalcFieldRow(pref) {
+        let container = document.getElementById('calcFieldRows');
+        if (!container) return;
+        let isEn = window.currentLang === 'en';
+        let div = document.createElement('div');
+        div.className = 'calc-field-row';
+        div.style.cssText = 'display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;';
+        div.innerHTML =
+            '<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; width:100%;">' +
+                '<input type="text" class="cf-zh" placeholder="' + (isEn ? 'Chinese name (e.g. Avg Price, no unit)' : '中文名（如 平均价格，不带单位）') + '" style="flex:1 1 150px; min-width:140px; padding:4px 6px; font-size:12px;">' +
+                '<input type="text" class="cf-en" placeholder="' + (isEn ? 'English name (e.g. Avg Price)' : 'English name (e.g. Avg Price)') + '" style="flex:1 1 150px; min-width:140px; padding:4px 6px; font-size:12px;">' +
+                '<input type="text" class="cf-unit" placeholder="' + (isEn ? 'Unit zh (e.g. USD/t, optional)' : '单位（如 美元/吨，可空）') + '" style="flex:1 1 110px; min-width:100px; padding:4px 6px; font-size:12px;">' +
+                '<input type="text" class="cf-unit-en" placeholder="' + (isEn ? 'Unit EN (e.g. USD/t, blank = auto)' : '英文单位（如 USD/t，空=自动）') + '" style="flex:1 1 130px; min-width:120px; padding:4px 6px; font-size:12px;">' +
+                '<button type="button" onclick="removeCalcFieldRow(this)" title="删除" style="border:0; background:transparent; color:#DC2626; cursor:pointer; font-size:14px; padding:2px 4px;">✕</button>' +
+            '</div>' +
+            '<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; width:100%; margin-top:4px;">' +
+                '<input type="text" class="cf-formula" placeholder="' + (isEn ? 'Formula: pick a column and Insert, repeat as needed' : '公式：下拉选列后「插入」，可反复多次') + '" style="flex:2 1 200px; min-width:170px; padding:4px 6px; font-size:12px;">' +
+                '<select class="cf-colsel" style="flex:1 1 140px; min-width:120px; width:auto; height:auto; padding:4px 4px; font-size:12px;"></select>' +
+                '<button type="button" class="cf-ins" onclick="insertCalcColumn(this)" style="border:1px solid #D1D5DB; background:#F9FAFB; border-radius:4px; cursor:pointer; font-size:12px; padding:4px 10px; flex:0 0 auto;">' + (isEn ? 'Insert' : '插入') + '</button>' +
+            '</div>';
+        if (pref) {
+            div.querySelector('.cf-zh').value = pref.nameZh || '';
+            div.querySelector('.cf-en').value = pref.nameEn || '';
+            div.querySelector('.cf-unit').value = pref.unit || '';
+            div.querySelector('.cf-unit-en').value = pref.unitEn || '';
+            div.querySelector('.cf-formula').value = pref.formula || '';
+        }
+        container.appendChild(div);
+        fillCalcFieldColList();
+    }
+
+    function removeCalcFieldRow(btn) {
+        let row = (btn && btn.closest) ? btn.closest('.calc-field-row') : null;
+        if (row) row.remove();
+    }
+
+    function renderCalcFieldRows() {
+        let container = document.getElementById('calcFieldRows');
+        if (!container) return;
+        container.innerHTML = '';
+        let defs = getCalcFieldDefs();
+        if (defs.length === 0) addCalcFieldRow();
+        else defs.forEach(d => addCalcFieldRow(d));
+    }
+
+    // 保存：校验（名称必填/不重名/公式可解析）→ 写 dashboardConfig.calcFields → 物化 → 刷新下拉。
+    // 返回 false 时保持弹窗打开（applyGlobalSettings 据此中断关闭）。
+    function saveCalcFieldsFromUI() {
+        let container = document.getElementById('calcFieldRows');
+        if (!container) return true;
+        let rows = Array.from(container.querySelectorAll('.calc-field-row'));
+        let defs = [];
+        let baseCols = (columns && columns.length) ? columns.slice() : (rawData.length ? Object.keys(rawData[0]) : []);
+        let prevDefs = getCalcFieldDefs();
+        for (let idx = 0; idx < rows.length; idx++) {
+            let rowEl = rows[idx];
+            let nameZh = (rowEl.querySelector('.cf-zh').value || '').trim();
+            let nameEn = (rowEl.querySelector('.cf-en').value || '').trim();
+            let unit = (rowEl.querySelector('.cf-unit') ? rowEl.querySelector('.cf-unit').value : '').trim();
+            let unitEn = (rowEl.querySelector('.cf-unit-en') ? rowEl.querySelector('.cf-unit-en').value : '').trim();
+            let formula = (rowEl.querySelector('.cf-formula').value || '').trim();
+            if (!nameZh && !formula) continue;
+            if (!nameZh) { alert('计算字段第 ' + (idx + 1) + ' 行：请填写中文名称（作为字段名；单位建议填到「单位」框，如 平均价格 + 美元/吨）'); return false; }
+            if (unit && /[（(\[【]/.test(unit)) { alert('「' + nameZh + '」：单位框请只填单位本身（如 美元/吨），不要带括号'); return false; }
+            if (unitEn && /[（(\[【]/.test(unitEn)) { alert('「' + nameZh + '」：英文单位框请只填单位本身（如 USD/t），不要带括号'); return false; }
+            if (!formula) { alert('「' + nameZh + '」：公式为空'); return false; }
+            if (columns.includes(nameZh) && !prevDefs.some(d => d.nameZh === nameZh)) { alert('「' + nameZh + '」与数据中已有列重名，请换一个名称'); return false; }
+            if (defs.some(d => d.nameZh === nameZh)) { alert('计算字段名称重复：「' + nameZh + '」'); return false; }
+            let parsed = parseCalcFormula(formula, baseCols.concat(defs.map(d => d.nameZh)));
+            if (!parsed.ok) { alert('「' + nameZh + '」公式有误：' + parsed.error); return false; }
+            defs.push({ nameZh: nameZh, nameEn: nameEn, unit: unit, unitEn: unitEn, formula: formula });
+        }
+        dashboardConfig.calcFields = defs;
+        applyCalcFields();
+        populateSelectOptions();
+        return true;
     }
 
     // ===== 数值单位双语映射（第四十四轮）=====
@@ -9028,6 +9397,7 @@ function applyChartAnalyticsI18N() {
         document.getElementById('chartTargetValue').value = '';
         document.getElementById('chartMaPeriods').value = 3;
         document.getElementById('chartHistYears').value = 5;
+        document.getElementById('chartStatYears').value = 5;
         renderAnalyticsPills();
         setAnalyticsPillsSelectedValues(['none']);
         toggleCustomTime('chart'); toggleChartFields();
@@ -9057,6 +9427,7 @@ function applyChartAnalyticsI18N() {
         setAnalyticsPillsSelectedValues(analyticsArr.length === 0 ? ['none'] : analyticsArr);
         document.getElementById('chartMaPeriods').value = parseInt(c.maPeriods) || 3;
         document.getElementById('chartHistYears').value = parseInt(c.histYears) || 5;
+        document.getElementById('chartStatYears').value = parseInt(c.statYears) || 5;
         document.getElementById('chartTargetValue').value = (c.targetValue === null || c.targetValue === undefined) ? '' : c.targetValue;
         toggleAnalyticsParams();
         let topNVal = c.topN || 'all';
@@ -9124,6 +9495,10 @@ function applyChartAnalyticsI18N() {
                 let n = parseInt(document.getElementById('chartHistYears').value);
                 return (isNaN(n) || n < 1) ? 5 : n;
             })(),
+            statYears: (function() {
+                let n = parseInt(document.getElementById('chartStatYears').value);
+                return (isNaN(n) || n < 1) ? 5 : n;
+            })(),
             targetValue: (function() {
                 let el = document.getElementById('chartTargetValue');
                 if (!el) return null;
@@ -9161,7 +9536,7 @@ function applyChartAnalyticsI18N() {
         let noteText = window.currentLang === 'en' ? (config.noteEn || '') : (config.noteZh || '');
         let titleEl = document.getElementById('title_' + config.id);
         let srcEl = document.getElementById('src_' + config.id);
-        if(titleEl) titleEl.textContent = titleText;
+        if(titleEl) titleEl.textContent = fillChartTitleText(titleText);
         if(srcEl) {
             // 英文界面的"来源/备注"用斜体（中文保持正体）
             let srcItalicEn = window.currentLang === 'en' ? 'italic' : 'normal';
@@ -9742,7 +10117,7 @@ function applyChartAnalyticsI18N() {
         if (!config) return;
         // 放大弹层顶部：标题 + 来源 + Logo（与仪表盘下载图同款视觉）
         // 标题直接从 config.title 读，避免依赖 ECharts 内部 title 配置
-        let ovTitle = window.currentLang === 'en' ? (config.titleEn || config.titleZh || 'Chart') : (config.titleZh || config.title || '图表');
+        let ovTitle = fillChartTitleText(window.currentLang === 'en' ? (config.titleEn || config.titleZh || 'Chart') : (config.titleZh || config.title || '图表'));
         let titleEl = document.getElementById('chartOverlayTitle');
         if (titleEl) titleEl.textContent = ovTitle;
         let ovSource = getChartSource(config, window.currentLang);
@@ -9986,13 +10361,37 @@ function applyChartAnalyticsI18N() {
         });
     }
 
+    // bak94：高质量缩小绘制——canvas 单步 drawImage 大比例缩小时只做双线性采样（相邻像素），
+    // 416px 宽 logo 缩到 76px 会跳过 4/5 像素导致文字发虚；逐级减半直到接近目标再画最后一步，
+    // 每一级都保留采样信息，效果接近面积平均重采样，右下角 logo 清晰。
+    function drawImageHiQuality(ctx, img, x, y, w, h) {
+        let sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
+        if (!(sw > 0 && sh > 0) || w < 8 || h < 8 || sw <= w * 2) { ctx.drawImage(img, x, y, w, h); return; }
+        ctx.save();
+        ctx.imageSmoothingEnabled = true;
+        try { ctx.imageSmoothingQuality = 'high'; } catch (e) {}
+        let cur = img, cw = sw, ch = sh;
+        while (cw > w * 2) {
+            let nw = Math.max(w, Math.floor(cw / 2)), nh = Math.max(h, Math.floor(ch / 2));
+            let off = document.createElement('canvas');
+            off.width = nw; off.height = nh;
+            let octx = off.getContext('2d');
+            octx.imageSmoothingEnabled = true;
+            try { octx.imageSmoothingQuality = 'high'; } catch (e) {}
+            octx.drawImage(cur, 0, 0, cw, ch, 0, 0, nw, nh);
+            cur = off; cw = nw; ch = nh;
+        }
+        ctx.drawImage(cur, x, y, w, h);
+        ctx.restore();
+    }
+
     async function downloadChartImage(chartId, copyOnly) {
         let config = dashboardConfig.charts.find(c => c.id === chartId);
         if (!config) return;
         let domId = `chart_${chartId}`;
         let chart = chartInstances[domId];
         if (!chart) return;
-        let title = window.currentLang === 'en' ? (config.titleEn || config.titleZh || 'chart') : (config.titleZh || config.title);
+        let title = fillChartTitleText(window.currentLang === 'en' ? (config.titleEn || config.titleZh || 'chart') : (config.titleZh || config.title));
         let source = getChartSource(config, window.currentLang);
         let note = window.currentLang === 'en' ? (config.noteEn || '') : (config.noteZh || '');
         let notePrefix = window.currentLang === 'en' ? 'Note: ' : '备注: ';
@@ -10205,17 +10604,22 @@ function applyChartAnalyticsI18N() {
             if (Object.keys(__dyMap).length) tempChart.setOption(opt, true);
         } catch (e) {}
         await new Promise(r => setTimeout(r, 150));
-        // 第四十一轮：510x300 原始尺寸输出（pixelRatio 1），与复制到剪贴板的图片完全一致
-        let chartUrl = tempChart.getDataURL({ type: 'png', pixelRatio: 1, backgroundColor: '#ffffff' });
+        // bak95：整图按 2× 渲染（retina）。根因：原合成画布是 520×310 CSS 像素（pixelRatio 1），
+        // 复制到微信再被放大，文字与 logo 一起发虚。改为 SS=2 输出 1040×620，图表位图与右下 logo
+        // 均为高分辨率，粘贴/下载后保持锐利。坐标仍用 CSS 单位（iw/ih），ctx.scale(SS) 负责设备像素映射。
+        let SS = 2;
+        let chartUrl = tempChart.getDataURL({ type: 'png', pixelRatio: SS, backgroundColor: '#ffffff' });
 
         // Canvas 合成：3 个对角斜放的 Sxcoal logo 水印 + 左下来源 + 右下小 Logo
         let canvas = document.createElement('canvas');
         let iw = w, ih = h;
-        canvas.width = iw; canvas.height = ih;
+        canvas.width = Math.round(iw * SS); canvas.height = Math.round(ih * SS);
         let ctx = canvas.getContext('2d');
+        ctx.scale(SS, SS);
         try {
             let chartImg = await loadImageAsync(chartUrl);
-            ctx.drawImage(chartImg, 0, 0);
+            // 显式按 CSS 尺寸绘制（无论 getDataURL 是否真的放大，都能铺满画布）
+            ctx.drawImage(chartImg, 0, 0, iw, ih);
             let logoSrc = (SXCOAL_LOGO_DATA_URI && SXCOAL_LOGO_DATA_URI.startsWith('data:')) ? SXCOAL_LOGO_DATA_URI : SXCOAL_LOGO_URL;
             let logoImg = await loadImageAsync(logoSrc);
             // 3 个对角斜放的小 logo 水印，与仪表盘背景同款视觉；尺寸按参考图缩小并降低透明度
@@ -10234,7 +10638,7 @@ function applyChartAnalyticsI18N() {
                 ctx.save();
                 ctx.translate(d.x + lw / 2, d.y + lh / 2);
                 ctx.rotate(-22 * Math.PI / 180);
-                ctx.drawImage(logoImg, -lw / 2, -lh / 2, lw, lh);
+                drawImageHiQuality(ctx, logoImg, -lw / 2, -lh / 2, lw, lh);
                 ctx.restore();
             });
             ctx.restore();
@@ -10246,9 +10650,9 @@ function applyChartAnalyticsI18N() {
             ctx.textAlign = 'left';
             ctx.textBaseline = 'bottom';
             ctx.fillText(sourceText, chartLeftEdge, ih - 8);
-            // 右下：Sxcoal logo（等比缩放到原 208x58 比例；520 宽画布下宽 76，放大后更清晰 — 用户反馈）
+            // 右下：Sxcoal logo（等比缩放到原 208x58 比例；520 宽画布下宽 76；bak94 逐级减半重采样保清晰）
             let ctxLw = 76, ctxLh = Math.round(ctxLw * 58 / 208);
-            ctx.drawImage(logoImg, iw - 14 - ctxLw, ih - 8 - ctxLh + 1, ctxLw, ctxLh);
+            drawImageHiQuality(ctx, logoImg, iw - 14 - ctxLw, ih - 8 - ctxLh + 1, ctxLw, ctxLh);
         } catch (e) {
             console.warn('downloadChartImage compose failed', e);
         }
@@ -10578,7 +10982,7 @@ function generateChartEmbedCode(chartId) {
             }
         }
         let isEn = (window.currentLang === 'en');
-        let title = isEn ? (config.titleEn || config.titleZh || 'chart') : (config.titleZh || config.title || '图表');
+        let title = fillChartTitleText(isEn ? (config.titleEn || config.titleZh || 'chart') : (config.titleZh || config.title || '图表'));
         let source = getChartSource(config, window.currentLang) || ((uiText[window.currentLang] || uiText.zh).source);
         let note = isEn ? (config.noteEn || '') : (config.noteZh || '');
         let notePrefix = isEn ? 'Note: ' : '备注: ';
@@ -11487,6 +11891,26 @@ function downloadChartPng(inZoom) {
   });
   tempChart.setOption(opt, true);
 
+  // bak94：高质量缩小绘制（逐级减半重采样），保证右下角 logo 清晰不发虚
+  function drawImageHiQuality(ctx2, img, x, y, w2, h2) {
+    var sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
+    if (!(sw > 0 && sh > 0) || w2 < 8 || h2 < 8 || sw <= w2 * 2) { ctx2.drawImage(img, x, y, w2, h2); return; }
+    var cur = img, cw = sw, ch = sh;
+    while (cw > w2 * 2) {
+      var nw = Math.max(w2, Math.floor(cw / 2)), nh = Math.max(h2, Math.floor(ch / 2));
+      var off = document.createElement('canvas');
+      off.width = nw; off.height = nh;
+      var octx = off.getContext('2d');
+      octx.imageSmoothingEnabled = true;
+      octx.imageSmoothingQuality = 'high';
+      octx.drawImage(cur, 0, 0, cw, ch, 0, 0, nw, nh);
+      cur = off; cw = nw; ch = nh;
+    }
+    ctx2.imageSmoothingEnabled = true;
+    ctx2.imageSmoothingQuality = 'high';
+    ctx2.drawImage(cur, x, y, w2, h2);
+  }
+
   setTimeout(function () {
     let url;
     try {
@@ -11519,7 +11943,7 @@ function downloadChartPng(inZoom) {
             ctx.save();
             ctx.translate(x + lw / 2, y + lh / 2);
             ctx.rotate(-22 * Math.PI / 180);
-            ctx.drawImage(logoImg, -lw / 2, -lh / 2, lw, lh);
+            drawImageHiQuality(ctx, logoImg, -lw / 2, -lh / 2, lw, lh);
             ctx.restore();
           });
           ctx.restore();
@@ -11534,7 +11958,7 @@ function downloadChartPng(inZoom) {
         if (haveLogo) {
 
           let ctxLw = 144, ctxLh = Math.round(ctxLw * 58 / 208);
-          ctx.drawImage(logoImg, iw - 28 - ctxLw, ih - 16 - ctxLh + 2, ctxLw, ctxLh);
+          drawImageHiQuality(ctx, logoImg, iw - 28 - ctxLw, ih - 16 - ctxLh + 2, ctxLw, ctxLh);
         } else {
           ctx.font = 'bold 24px "Source Sans 3", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
           ctx.fillStyle = '#B23E19';
@@ -11566,7 +11990,7 @@ function downloadChartPng(inZoom) {
         ctx.fillText(sourceText, chartLeftEdge, ih - 16);
         if (haveLogo) {
           let ctxLw = 144, ctxLh = Math.round(ctxLw * 58 / 208);
-          ctx.drawImage(logoImg, iw - 28 - ctxLw, ih - 16 - ctxLh + 2, ctxLw, ctxLh);
+          drawImageHiQuality(ctx, logoImg, iw - 28 - ctxLw, ih - 16 - ctxLh + 2, ctxLw, ctxLh);
         } else {
           ctx.font = 'bold 24px "Source Sans 3", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
           ctx.fillStyle = '#B23E19';
@@ -13004,7 +13428,15 @@ function setupOverlaySwipe() {
                 rawData: rawData,
                 translationDict: translationDict,
                 dashboardConfig: dashboardConfig,
-                rawWorkbookData: window.rawWorkbookData || {},
+                // 导出页是只读终端：rawWorkbookData 只保留模型关联引用的维度表（打开时重建双语字典用），
+                // 未被引用的表（如事实表整表拷贝"原始表"，美国模板 3.2MB JSON）剔除，GZ1 载荷显著变小
+                rawWorkbookData: (function () {
+                    let src = window.rawWorkbookData || {};
+                    let refs = new Set((modelRelationships || []).map(r => r.dimSheet));
+                    let slim = {};
+                    Object.keys(src).forEach(k => { if (refs.has(k)) slim[k] = src[k]; });
+                    return slim;
+                })(),
                 modelRelationships: modelRelationships || [],
                 dimensionSheets: dimensionSheets || [],
                 dimensionColumns: dimensionColumns || [],
