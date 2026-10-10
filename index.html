@@ -6705,6 +6705,11 @@
         }
 
         let axisLabelConfig = { formatter: (val) => window.currentLang === 'en' ? (typeof val === 'number' ? adaptAxisValueToUnit(val, unitY1, isEn).toLocaleString('en-US') : val) : val };
+        // 第十四轮：combo 次轴必须用 Y2 自己的单位换算刻度（axisLabelConfig 写死 unitY1，
+        // 亿美元→mln $ 后刻度 1200/1400 被 Y1 的 Mt >1000 兜底再÷100，显示成 12/14）
+        let axisLabelConfigY2 = { formatter: (val) => window.currentLang === 'en' ? (typeof val === 'number' ? adaptAxisValueToUnit(val, unitY2, isEn).toLocaleString('en-US') : val) : val };
+        // combo 次轴系列的 tooltip 也要按 Y2 单位换算（否则 EN 下 1249 mln $ 被按 Mt 兜底 ÷100 显示成 12.49）
+        let y2SeriesRef = { name: null };
 
         // 图例默认放图表上方（top），左右对称；图例与图表距离紧凑（仅 4px 喘息）。
         // 单位（Y/X 轴）已合并到 HTML 标题尾部，这里不留冗余 padding。
@@ -6720,7 +6725,7 @@
                 trigger: config.type === 'pie' || config.type === 'treemap' ? 'item' : 'axis',
                 // 约束在图表容器内：hover 最左侧/最右侧的数据点时 tooltip 不再被容器边缘截断
                 confine: true,
-                valueFormatter: (val) => formatChartNumber(adaptAxisValueToUnit(val, unitY1, isEn))
+                valueFormatter: (val, params) => formatChartNumber(adaptAxisValueToUnit(val, (params && params.seriesName && params.seriesName === y2SeriesRef.name) ? unitY2 : unitY1, isEn))
             },
             // 图例紧贴顶部（top=4），与 grid 顶部仅留 ~6px 喘息；itemGap 10 让多系列图例更紧凑。
             legend: isLegendHiddenChart
@@ -6749,7 +6754,19 @@
         }
 
         if(config.type === 'pie' || config.type === 'ring-pie') {
-            let sortedEntries = Object.entries(groupMap).sort((a,b) => b[1] - a[1]);
+            // 饼/环不支持细分系列：带 subField（如 年份名称）时 groupMap[x] 是 {子值: 数} 嵌套对象，
+            // 直接排序/渲染得到 NaN，整图空白 —— 按子值求和摊平成单值（timeScope=latest 时子值恒为最新期，求和即原值）
+            let flatPieMap = {};
+            Object.entries(groupMap).forEach(([k, v]) => {
+                if (v && typeof v === 'object') {
+                    let s = 0;
+                    Object.values(v).forEach(x => { if (typeof x === 'number' && isFinite(x)) s += x; });
+                    flatPieMap[k] = s;
+                } else {
+                    flatPieMap[k] = v;
+                }
+            });
+            let sortedEntries = Object.entries(flatPieMap).sort((a,b) => b[1] - a[1]);
             let topN = (config.topN && config.topN !== 'all') ? parseInt(config.topN) : sortedEntries.length;
             let pieData = [];
             if(sortedEntries.length > topN) {
@@ -7013,8 +7030,10 @@
                     return null;
                 });
                 let niceMin2 = computeNiceMin(finalY2Data);
-                option.yAxis.push({ type: 'value', name: unitY2, min: niceMin2, splitLine: { show: false }, axisLabel: axisLabelConfig, alignTicks: true });
-                seriesList.push({ name: getMappedValue(config.yField2, window.currentLang), type: 'line', yAxisIndex: 1, data: finalY2Data, connectNulls: false, symbol: 'none', showSymbol: false, symbolSize: 0, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
+                option.yAxis.push({ type: 'value', name: unitY2, min: niceMin2, splitLine: { show: false }, axisLabel: axisLabelConfigY2, alignTicks: true });
+                let y2SeriesNamePlain = getMappedValue(config.yField2, window.currentLang);
+                y2SeriesRef.name = y2SeriesNamePlain;
+                seriesList.push({ name: y2SeriesNamePlain, type: 'line', yAxisIndex: 1, data: finalY2Data, connectNulls: false, symbol: 'none', showSymbol: false, symbolSize: 0, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
             }
             let histRangeMain = buildHistRangeSeries(config, xData, { isEn: isEn, explicitlyRequestedTotal: explicitlyRequestedTotal, isTopN: isTopN });
             let histOptsMain = { explicitlyRequestedTotal: explicitlyRequestedTotal, isTopN: isTopN };
@@ -10136,6 +10155,8 @@ function applyChartAnalyticsI18N() {
                 s.center = [(s.center && s.center[0]) ? s.center[0] : '50%', `${Math.round((bodyTop + (h - footHeight)) / 2 / h * 100)}%`];
                 delete s.width; delete s.height;
                 if (s.label) s.label.fontSize = 10;
+                // 第六十六轮：520x310 紧凑画布上相邻窄扇区的外置标签会上下叠字、顶部小扇区标签还会
+                // 顶进标题带——防叠处理统一放在下方 setOption 前的两遍方案里（收集→链式下推→查表渲染）。
             }
         });
         // 更新 grid 让出 pie/treemap 区域
@@ -10143,7 +10164,46 @@ function applyChartAnalyticsI18N() {
             opt.grid = opt.grid.map(g => Object.assign({}, g, { top: bodyTop, bottom: footHeight, left: chartLeftEdge, right: chartRightEdge, containLabel: g.containLabel !== false }));
         }
 
+        // 饼/环标签防叠（第六十六轮）：第一遍渲染收集矩形 → 全局链式下推 → 第二遍按 dy 渲染
+        let __pieLabelCollect = [];
+        (opt.series || []).forEach(s => {
+            if (!s || s.type !== 'pie' || !Array.isArray(s.data)) return;
+            try {
+                __pieLabelCollect.push({ s: s, rects: [] });
+                let entry = __pieLabelCollect[__pieLabelCollect.length - 1];
+                s.labelLayout = function (params) {
+                    let r = params.labelRect;
+                    if (r && typeof r.x === 'number' && r.width) {
+                        entry.rects.push({ x: r.x, y: r.y, hgt: r.height, side: (r.x + r.width / 2) < w / 2 ? -1 : 1 });
+                    }
+                    return undefined;
+                };
+            } catch (e) {}
+        });
         tempChart.setOption(opt, true);
+        // 两遍方案第二步：按"标题带底 30px + 同侧自顶向下 2px 链"计算每个标签的下移量，再查表渲染
+        try {
+            let __dyMap = {};
+            __pieLabelCollect.forEach(entry => {
+                [-1, 1].forEach(side => {
+                    let list = entry.rects.filter(o => o.side === side).sort((a, b) => a.y - b.y);
+                    let prevBottom = 30; // 标题带底：title top 8 + 字 13.5 行高 ≈ 26，留 4px 余量
+                    list.forEach(o => {
+                        let ny = Math.max(o.y, prevBottom + 2);
+                        let dy = ny - o.y;
+                        if (dy > 0.5) __dyMap[o.x.toFixed(1) + '|' + o.y.toFixed(1)] = dy;
+                        prevBottom = ny + o.hgt;
+                    });
+                });
+                entry.s.labelLayout = function (params) {
+                    let r = params.labelRect;
+                    if (!r || typeof r.x !== 'number') return undefined;
+                    let dy = __dyMap[r.x.toFixed(1) + '|' + r.y.toFixed(1)];
+                    return dy ? { dy: dy } : undefined;
+                };
+            });
+            if (Object.keys(__dyMap).length) tempChart.setOption(opt, true);
+        } catch (e) {}
         await new Promise(r => setTimeout(r, 150));
         // 第四十一轮：510x300 原始尺寸输出（pixelRatio 1），与复制到剪贴板的图片完全一致
         let chartUrl = tempChart.getDataURL({ type: 'png', pixelRatio: 1, backgroundColor: '#ffffff' });
