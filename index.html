@@ -2510,7 +2510,7 @@
      */
     function adaptAxisValueToUnit(val, unitY1, isEn) {
         if (typeof val !== 'number' || isNaN(val)) return val;
-        if (isEn && (unitY1 === 'Mt' || unitY1 === 'USD mn') && Math.abs(val) > 1000) return val / 100;
+        if (isEn && (unitY1 === 'Mt' || unitY1 === 'USD mn' || unitY1 === 'JPY mn') && Math.abs(val) > 1000) return val / 100;
         return val;
     }
 
@@ -2590,10 +2590,15 @@
             if(/美元|usd/i.test(unit) || /美元/.test(fieldName)) {
                 return (/吨|\/t/i.test(unit) || /吨/.test(fieldName)) ? 'USD/t' : 'USD mn';
             }
-            if(/元|rmb/i.test(unit) || /元/.test(fieldName)) return 'RMB/t';
+            // 日元类单位：日元/吨 → JPY/t；亿日元 → JPY mn（1 亿日元 = 100 JPY mn，与 亿美元→USD mn 同比例 ÷100）。
+            // 必须放在"元"关键字之前——否则 /元/ 会把 日元/亿日元 误判成 RMB（用户反馈日本煤炭进口 Y2 轴英文显示 RMB/t）。
+            if(/日元|円|jpy|yen/i.test(unit) || /日元/.test(fieldName)) {
+                return (/吨|\/t/i.test(unit) || /吨/.test(fieldName)) ? 'JPY/t' : 'JPY mn';
+            }
+            if(/元|rmb/i.test(unit) || /元/.test(fieldName)) return (/吨|\/t/i.test(unit) || /吨/.test(fieldName)) ? 'RMB/t' : 'RMB';
             if(/吨|t|ton/i.test(unit) || /吨/.test(fieldName)) return 't';
             if(/%|同比|环比|yoy|mom/i.test(unit) || /%/.test(fieldName)) return '%';
-            return unit.replace(/万吨/, 'Mt').replace(/美元\/吨/, 'USD/t').replace(/万美元/, 'USD mn').replace(/元\/吨/, 'RMB/t').replace(/元/, 'RMB').replace(/吨/, 't');
+            return unit.replace(/万吨/, 'Mt').replace(/美元\/吨/, 'USD/t').replace(/万美元/, 'USD mn').replace(/日元\/吨/, 'JPY/t').replace(/亿日元/, 'JPY mn').replace(/万日元/, 'JPY mn').replace(/日元/, 'JPY').replace(/元\/吨/, 'RMB/t').replace(/元/, 'RMB').replace(/吨/, 't');
         }
         return unit;
     }
@@ -2604,7 +2609,7 @@
         let d = unitConvDivisor(fieldName);
         if (d !== null) return d;
         let u = extractPureUnit(fieldName, true);
-        return (u === 'Mt' || u === 'USD mn') ? 100 : 1;
+        return (u === 'Mt' || u === 'USD mn' || u === 'JPY mn') ? 100 : 1;
     }
 
     // 均价/单价类字段判定：字段名含"价"且单位是 每 吨 计价（元/吨、美元/吨 等）
@@ -2694,6 +2699,10 @@
         if (!isEn && unit === '万美元' && Math.abs(num) >= 10000) return { text: (num / 10000).toFixed(2), unit: '亿美元' };
         if (isEn && unit === 'USD mn' && Math.abs(num) >= 1000) {
             return { text: (num / 1000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), unit: 'bn USD' };
+        }
+        // bak96：日元同理（亿日元 ≥1万亿 时升到 JPY bn）
+        if (isEn && unit === 'JPY mn' && Math.abs(num) >= 1000) {
+            return { text: (num / 1000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), unit: 'JPY bn' };
         }
         return null;
     }
@@ -3170,8 +3179,11 @@
         // —— 中文货币 ——
         '元': { to: '万元', div: 1e4 }, '万元': { to: '亿元', div: 1e4 }, '亿元': { to: '万亿元', div: 1e4 },
         '美元': { to: '万美元', div: 1e4 }, '万美元': { to: '亿美元', div: 1e4 }, '亿美元': { to: '万亿美元', div: 1e4 },
+        // bak96：日元中文进位（亿日元→万亿日元），否则大额日元数字不升档
+        '日元': { to: '万日元', div: 1e4 }, '万日元': { to: '亿日元', div: 1e4 }, '亿日元': { to: '万亿日元', div: 1e4 },
         // —— 英文货币 ——
         'USD': { to: 'USD mn', div: 1e6 }, 'USD mn': { to: 'USD bn', div: 1e3 }, 'USD bn': { to: 'USD tn', div: 1e3 },
+        'JPY': { to: 'JPY mn', div: 1e6 }, 'JPY mn': { to: 'JPY bn', div: 1e3 }, 'JPY bn': { to: 'JPY tn', div: 1e3 },
         // —— 中文电力/能量（发电量等）——
         '千瓦时': { to: '万千瓦时', div: 1e4 }, '万千瓦时': { to: '亿千瓦时', div: 1e4 }, '亿千瓦时': { to: '万亿千瓦时', div: 1e4 },
         // —— 英文电力/能量 ——
@@ -11438,7 +11450,7 @@ var EMBED_IS_EN = ${isEn};
 var EMBED_UNIT = ${JSON.stringify(yUnitName)};
 function adaptAxisValueToUnit(val, unitY1, isEn) {
   if (typeof val !== 'number' || isNaN(val)) return val;
-  if (isEn && (unitY1 === 'Mt' || unitY1 === 'USD mn') && Math.abs(val) > 1000) return val / 100;
+  if (isEn && (unitY1 === 'Mt' || unitY1 === 'USD mn' || unitY1 === 'JPY mn') && Math.abs(val) > 1000) return val / 100;
   return val;
 }
 function buildAxisFmt(unit) {
