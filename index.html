@@ -6181,7 +6181,7 @@
     // 估算 Y 轴数值标签的最大宽度：取该轴绑定系列数据的最大绝对值，
     // 用与 axisLabel 一致的 formatter 生成文本后逐字符估宽
     //（数字/负号 ≈ 0.56em，小数点/千分位逗号 ≈ 0.28em）。
-    function estimateYAxisLabelWidth(values, fontSize, fmt) {
+    function estimateYAxisLabelWidth(values, fontSize, fmt, fontFamily) {
         let nums = [];
         (values || []).forEach(v => {
             if (typeof v === 'number' && isFinite(v)) nums.push(v);
@@ -6202,11 +6202,13 @@
         if (hasNeg) s = '-' + s;
         // canvas measureText 实测（与 ECharts 画布同源，精度高于逐字符估算）；
         // canvas 不可用时回退到逐字符估算。
+        // fontFamily：主页面轴刻度未显式设置字体族 → ECharts 用默认 'sans-serif' 渲染，
+        // 估宽必须同族同号（此前用 11px 网页字体低估 ~6px，"35,000" 被裁成 "35,00" — 用户反馈）。
         try {
             let cv = document.createElement('canvas');
             let ctx = cv.getContext && cv.getContext('2d');
             if (ctx) {
-                ctx.font = fontSize + 'px "Source Sans 3", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+                ctx.font = fontSize + 'px ' + (fontFamily || '"Source Sans 3", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif');
                 let mw = ctx.measureText(s).width;
                 if (mw > 0) return Math.ceil(mw);
             }
@@ -7264,8 +7266,10 @@
                 // 次轴（右轴）单位名可能比刻度标签还长（如 "美元/吨" / "USD/t"），
                 // 右侧留白同时满足刻度标签与单位名，确保单位名完整显示、不被画布右缘裁切。
                 let unitW2 = (y2a && y2a.name) ? measureTextPx(y2a.name, 11) : 0;
+                // 刻度标签按 ECharts 实际渲染族/号估宽（默认 'sans-serif' 12px），10 = 8px 边距 + 2px 呼吸，
+                // 避免 "35,000" 这类 6 字符英文刻度被画布右缘裁成 "35,00"（用户反馈）
                 let rightNeed = hasY2
-                    ? Math.max(8 + estimateYAxisLabelWidth(collectYAxisSeriesValues(option, 1), 11, fmtR), 12 + unitW2)
+                    ? Math.max(10 + estimateYAxisLabelWidth(collectYAxisSeriesValues(option, 1), 12, fmtR, 'sans-serif'), 12 + unitW2)
                     : 32;
                 // 无次轴时固定 32（用户偏好：左右空白不要太大）；有次轴时按需加宽（上限 140）
                 let newRight = hasY2 ? Math.min(140, Math.max(32, Math.ceil(rightNeed))) : 32;
@@ -11566,6 +11570,13 @@ function applyFmt2(opt) {
   }
   if (Array.isArray(opt.yAxis) && opt.yAxis.length > 1 && opt.yAxis[1] && opt.yAxis[1].name) {
     let needR = 12 + measureTextPx(opt.yAxis[1].name, 13);
+    // 刻度标签宽度也要纳入（嵌入页轴标签 14px 渲染，"35,000" 等 6 字符英文刻度
+    // 只按单位名留白会被画布右缘裁掉最后一位 — 与主页面同一缺陷）。10 = 8px 边距 + 2px 呼吸。
+    let tickFmtY2 = (opt.yAxis[1].axisLabel && typeof opt.yAxis[1].axisLabel.formatter === 'function') ? opt.yAxis[1].axisLabel.formatter : null;
+    if (tickFmtY2) {
+      let tickNeed = 10 + estimateYAxisLabelWidth(collectYAxisSeriesValues(opt, 1), 14, tickFmtY2);
+      if (tickNeed > needR) needR = tickNeed;
+    }
     let g0 = Array.isArray(opt.grid) ? opt.grid[0] : opt.grid;
     if (g0 && typeof g0.right === 'number' && needR > g0.right) {
       if (Array.isArray(opt.grid)) opt.grid = opt.grid.map(g => Object.assign({}, g, { right: needR }));
