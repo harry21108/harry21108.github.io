@@ -1908,6 +1908,12 @@
             if (pairs.length === 0) return;
             dimData.forEach(row => {
                 pairs.forEach(p => {
+                    // bak99：自配对（zh 列 === en 列，如「年季名称↔年季名称」「日期↔日期」）是纯身份映射，
+                    // 显示上 getMappedValue 的 fallback 本就返回原值——不写字典。
+                    // 否则「年季名称」的 2026-1~2026-4 会与「年月名称」同年月份撞键，
+                    // 且季度行在数据里靠后，把 年月↔YearMth 已写入的 Apr 2026 等正确翻译覆盖回原文
+                    // （表现为切片器/图例里每年 1~4 月显示原文、5~12 月正常）。
+                    if (String(p.zh) === String(p.en)) return;
                     let zhVal = String(row[p.zh] === undefined || row[p.zh] === null ? '' : row[p.zh]).trim();
                     let enVal = String(row[p.en] === undefined || row[p.en] === null ? '' : row[p.en]).trim();
                     if (zhVal && zhVal !== 'undefined') {
@@ -2490,7 +2496,7 @@
         return r;
     }
     
-    function isPercentMetric(fieldName) { return /%|同比|环比|yoy|mom|增幅|增速|比率|幅度/i.test(fieldName); }
+    function isPercentMetric(fieldName) { return /%|同比|环比|yoy|mom|增幅|增速|比率|幅度|占比|份额|share/i.test(fieldName); }
 
     // 图表内所有数值（标签 / tooltip）统一按 2 位小数展示，保证图上数字与悬浮数字一致
     function formatChartNumber(val) {
@@ -8622,7 +8628,7 @@ function applyChartAnalyticsI18N() {
         // 计算字段区文案
         setText('tab_calc', t.tabCalc || (_isEn ? 'Calc Fields' : '计算字段'));
         setText('calcFieldTitle', t.calcFieldTitle || (_isEn ? 'Calculated fields (formulas over fact columns · bilingual)' : '计算字段（基于事实表列的公式 · 双语）'));
-        setText('calcFieldHint', t.calcFieldHint || (_isEn ? 'Write arithmetic over column names (+ - * / and parentheses). To avoid typos, pick a column in the dropdown next to the formula and click Insert — repeat as many times as needed; the dropdown lists numeric fact columns only. Keep the name unit-free (e.g. Avg Price) and put the unit in its own box: it shows on the chart Y-axis while the legend shows the name only. The English unit is auto-derived from the global unit mapping; if your unit is not covered (or you prefer your own notation), type it in the "Unit EN" box and it is used as-is. Division by zero or empty inputs yields blank. After saving, the new field appears in chart Y-axis / KPI dropdowns and is stored with templates and exports. Tip: calc fields whose name contains "价/price" (or with a per-ton unit like USD/t) are automatically quantity-weighted when aggregated.' : '用列名写四则运算（支持 + - * / 和括号）。为防列名写错，可在公式旁下拉选列后点「插入」，可反复多次（插列名 → 手敲运算符 → 再插）；下拉只列出事实表数值列。名称建议不带单位（如 平均价格），单位填入「单位」框——单位会显示在图表 Y 轴上，图例只显示名称。英文单位默认按全局「数值单位双语映射」自动推导，映射没有的（或想用自己写法）直接填「英文单位」框即可，填了就原样显示。除以 0 或空值的结果留空。保存后新字段出现在图表 Y 轴、卡片等度量下拉中，并随模板/导出保存。提示：计算字段名称含「价」（如「平均价格」）或单位形如「美元/吨」时，图表聚合会自动按数量列加权平均（Σ价×量/Σ量），口径正确。'));
+        setText('calcFieldHint', t.calcFieldHint || (_isEn ? 'Write arithmetic over column names (+ - * / and parentheses). To avoid typos, pick a column in the dropdown next to the formula and click Insert — repeat as many times as needed; the dropdown lists numeric fact columns only. Keep the name unit-free (e.g. Avg Price) and put the unit in its own box: it shows on the chart Y-axis while the legend shows the name only. The English unit is auto-derived from the global unit mapping; if your unit is not covered (or you prefer your own notation), type it in the "Unit EN" box and it is used as-is. Division by zero or empty inputs yields blank. After saving, the new field appears in chart Y-axis / KPI dropdowns and is stored with templates and exports. Tip: calc fields whose name contains "价/price" (or with a per-ton unit like USD/t) are automatically quantity-weighted when aggregated. bak99: aggregate functions are supported — SUM(col), AVG, MAX, MIN, COUNT(col), with optional grouping dimensions SUM(col; Dim1, Dim2) computed over the current full dataset. Share examples: 进口量 / SUM(进口量) = share of grand total; 进口量 / SUM(进口量; 年月名称) = share within each month (×100, or just set the unit to % and keep the raw 0-1 ratio).' : '用列名写四则运算（支持 + - * / 和括号）。为防列名写错，可在公式旁下拉选列后点「插入」，可反复多次（插列名 → 手敲运算符 → 再插）；下拉只列出事实表数值列。名称建议不带单位（如 平均价格），单位填入「单位」框——单位会显示在图表 Y 轴上，图例只显示名称。英文单位默认按全局「数值单位双语映射」自动推导，映射没有的（或想用自己写法）直接填「英文单位」框即可，填了就原样显示。除以 0 或空值的结果留空。保存后新字段出现在图表 Y 轴、卡片等度量下拉中，并随模板/导出保存。提示：计算字段名称含「价」（如「平均价格」）或单位形如「美元/吨」时，图表聚合会自动按数量列加权平均（Σ价×量/Σ量），口径正确。bak99：支持聚合函数——SUM(列)、AVG、MAX、MIN、COUNT(列)，可带分组维度 SUM(列; 维度1, 维度2)，按当前全量数据计算。占比写法：进口量 / SUM(进口量) = 占总计比例；进口量 / SUM(进口量; 年月名称) = 占当月比例（×100，或直接把单位填成 % 并保持 0~1 原值，会自动按百分数显示）。'));
         setText('calcFieldAddBtn', t.calcFieldAddBtn || (_isEn ? '＋ Add calculated field' : '＋ 添加计算字段'));
         document.querySelectorAll('#calcFieldRows .cf-ins').forEach(b => { b.textContent = _isEn ? 'Insert' : '插入'; });
         document.querySelectorAll('#calcFieldRows .cf-colsel').forEach(s => { if (s.options.length && !s.value) s.options[0].text = _isEn ? 'Pick a column…' : '选择列名…'; });
@@ -8631,17 +8637,24 @@ function applyChartAnalyticsI18N() {
     /* ===== 计算字段（自定义派生度量）=====
        设计要点：
        - 公式 = 事实表列名 + 数字 + + - * / ( ) 的四则运算，递归下降解析成闭包，逐行求值；
+       - bak99：支持聚合函数 SUM/AVG/MAX/MIN/COUNT(列) 与分组聚合 SUM(列; 维度1, 维度2)——
+         物化时先在当前全量数据上把每个聚合引用算成「常数/按组常数表」，再逐行求值；
+         占比写法：进口量 / SUM(进口量) = 占总计比例；进口量 / SUM(进口量; 年月名称) = 占当月比例；
        - 物化：把结果写成每行的真实列（列名 = 中文名），下游（图表/卡片/聚合/单位换算/导出）
          全部按普通事实列工作，零侵入、渲染零额外开销（只在保存/上传时 O(行数) 算一次）；
        - 除以 0 / 空值 → 留空（null），不污染求和；
        - 名称含「价」且单位含「/吨」时自动命中均价加权聚合（isPriceMetricField 既有逻辑）。 */
     let __appliedCalcNames = null;
 
-    // 解析公式 → { ok, fn(row), error }。sourceColumns 为可用列名（长名优先匹配，避免前缀截断）。
+    const __CALC_AGG_FUNCS = { SUM: 1, AVG: 1, MAX: 1, MIN: 1, COUNT: 1 };
+
+    // 解析公式 → { ok, fn(row, aggStore), aggs, error }。sourceColumns 为可用列名（长名优先匹配，避免前缀截断）。
+    // aggStore: Map(aggId → Map(分组键 → 聚合值))，由 applyCalcFields 在物化前按当前数据预算；无聚合时可不传。
     function parseCalcFormula(formula, sourceColumns) {
         let s = String(formula || '');
         let cols = (sourceColumns || []).map(String).sort((a, b) => b.length - a.length);
         let tokens = [];
+        let aggs = [];
         let i = 0;
         while (i < s.length) {
             let ch = s[i];
@@ -8653,11 +8666,20 @@ function applyChartAnalyticsI18N() {
                 i += m[0].length; continue;
             }
             if ('+-*/()'.indexOf(ch) >= 0) { tokens.push({ t: ch }); i++; continue; }
+            if (ch === ';' || ch === '；' || ch === ',' || ch === '，') { tokens.push({ t: ';' }); i++; continue; }
+            // bak99：字母序列 → 聚合函数名（后随 "(" 才成立），否则回落到列名匹配
+            if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+                let wm = s.slice(i).match(/^[A-Za-z]+/);
+                let word = wm[0].toUpperCase();
+                let j = i + wm[0].length;
+                while (j < s.length && (s[j] === ' ' || s[j] === '\t')) j++;
+                if (__CALC_AGG_FUNCS[word] && s[j] === '(') { tokens.push({ t: 'func', v: word }); i = j; continue; }
+            }
             let rest = s.slice(i);
             let hit = null;
             for (let ci = 0; ci < cols.length; ci++) { if (rest.indexOf(cols[ci]) === 0) { hit = cols[ci]; break; } }
             if (hit) { tokens.push({ t: 'col', v: hit }); i += hit.length; continue; }
-            return { ok: false, error: '无法识别的内容「' + rest.slice(0, 14) + '」（位置 ' + (i + 1) + '）——公式里只能出现列名、数字和 + - * / ( )' };
+            return { ok: false, error: '无法识别的内容「' + rest.slice(0, 14) + '」（位置 ' + (i + 1) + '）——公式里只能出现列名、数字、SUM/AVG/MAX/MIN/COUNT 和 + - * / ( )' };
         }
         if (tokens.length === 0) return { ok: false, error: '公式为空' };
         let p = 0;
@@ -8666,7 +8688,7 @@ function applyChartAnalyticsI18N() {
             let left = term();
             while (p < tokens.length && (tokens[p].t === '+' || tokens[p].t === '-')) {
                 let op = tokens[p++].t, r = term(), l = left;
-                left = (row) => { let a = numOrNull(l(row)), b = numOrNull(r(row)); return (a === null || b === null) ? null : (op === '+' ? a + b : a - b); };
+                left = (row, store) => { let a = numOrNull(l(row, store)), b = numOrNull(r(row, store)); return (a === null || b === null) ? null : (op === '+' ? a + b : a - b); };
             }
             return left;
         }
@@ -8674,8 +8696,8 @@ function applyChartAnalyticsI18N() {
             let left = factor();
             while (p < tokens.length && (tokens[p].t === '*' || tokens[p].t === '/')) {
                 let op = tokens[p++].t, r = factor(), l = left;
-                left = (row) => {
-                    let a = numOrNull(l(row)), b = numOrNull(r(row));
+                left = (row, store) => {
+                    let a = numOrNull(l(row, store)), b = numOrNull(r(row, store));
                     if (a === null || b === null) return null;
                     return op === '*' ? a * b : (b === 0 ? null : a / b);
                 };
@@ -8685,7 +8707,7 @@ function applyChartAnalyticsI18N() {
         function factor() {
             if (p >= tokens.length) throw new Error('公式不完整');
             let tk = tokens[p];
-            if (tk.t === '-') { p++; let f = factor(); return (row) => { let v = numOrNull(f(row)); return v === null ? null : -v; }; }
+            if (tk.t === '-') { p++; let f = factor(); return (row, store) => { let v = numOrNull(f(row, store)); return v === null ? null : -v; }; }
             if (tk.t === '+') { p++; return factor(); }
             if (tk.t === '(') {
                 p++; let e = expr();
@@ -8694,12 +8716,44 @@ function applyChartAnalyticsI18N() {
             }
             if (tk.t === 'num') { p++; let v = tk.v; return () => v; }
             if (tk.t === 'col') { p++; let k = tk.v; return (row) => numOrNull(row ? row[k] : null); }
+            if (tk.t === 'func') {
+                p++;
+                if (!tokens[p] || tokens[p].t !== '(') throw new Error(tk.v + ' 后需要 (');
+                p++;
+                if (!tokens[p] || tokens[p].t !== 'col') throw new Error(tk.v + '() 内需要列名');
+                let aggCol = tokens[p].v; p++;
+                let dims = [];
+                while (tokens[p] && tokens[p].t === ';') {
+                    p++;
+                    if (!tokens[p] || tokens[p].t !== 'col') throw new Error(tk.v + '() 的「;」后需要分组列名');
+                    dims.push(tokens[p].v); p++;
+                }
+                if (!tokens[p] || tokens[p].t !== ')') throw new Error('聚合函数括号不匹配');
+                p++;
+                if (cols.indexOf(aggCol) < 0) throw new Error('聚合列「' + aggCol + '」不在可用列中');
+                for (let di = 0; di < dims.length; di++) {
+                    if (dims[di] === aggCol) throw new Error('分组列不能与聚合列相同（占比请引用其它维度，如 年月名称/煤种）');
+                    if (cols.indexOf(dims[di]) < 0) throw new Error('分组列「' + dims[di] + '」不在可用列中');
+                }
+                let id = aggs.length;
+                aggs.push({ id: id, func: tk.v, col: aggCol, dims: dims });
+                return (row, store) => {
+                    let m = store ? store.get(id) : null;
+                    if (!m) return null;
+                    let k = '';
+                    if (dims.length) {
+                        k = dims.map(d => { let v = row ? row[d] : null; return (v === null || v === undefined) ? '' : String(v).trim(); }).join('\u0001');
+                    }
+                    let v = m.get(k);
+                    return (typeof v === 'number' && isFinite(v)) ? v : null;
+                };
+            }
             throw new Error('公式不完整');
         }
         let fn;
         try { fn = expr(); if (p !== tokens.length) throw new Error('公式有多余内容'); }
         catch (e) { return { ok: false, error: e.message || '公式解析失败' }; }
-        return { ok: true, fn: fn };
+        return { ok: true, fn: fn, aggs: aggs };
     }
 
     function getCalcFieldDefs() {
@@ -8732,7 +8786,44 @@ function applyChartAnalyticsI18N() {
             let parsed = parseCalcFormula(d.formula, baseCols.concat(accepted));
             if (!parsed.ok) { d.__error = parsed.error; return; }
             let fn = parsed.fn, name = d.nameZh;
-            rawData.forEach(r => { let v = fn(r); r[name] = (typeof v === 'number' && isFinite(v)) ? v : null; });
+            // bak99：先在当前全量数据上预算聚合引用（SUM/AVG/MAX/MIN/COUNT，可带分组维度），
+            // 聚合按「物化时刻的 rawData」计算——改数据/时间范围后重新「应用并刷新全盘」即重算。
+            let store = new Map();
+            (parsed.aggs || []).forEach(a => {
+                let isNum = (a.func !== 'COUNT');
+                let acc = new Map();
+                rawData.forEach(r => {
+                    let k = '';
+                    if (a.dims.length) {
+                        k = a.dims.map(dm => { let v = r[dm]; return (v === null || v === undefined) ? '' : String(v).trim(); }).join('\u0001');
+                    }
+                    let o = acc.get(k);
+                    if (!o) { o = { s: 0, c: 0, mx: null, mn: null }; acc.set(k, o); }
+                    let v = r[a.col];
+                    if (isNum) {
+                        if (typeof v !== 'number') v = parseFloat(v);
+                        if (typeof v === 'number' && isFinite(v)) {
+                            o.s += v; o.c++;
+                            if (o.mx === null || v > o.mx) o.mx = v;
+                            if (o.mn === null || v < o.mn) o.mn = v;
+                        }
+                    } else {
+                        if (v !== null && v !== undefined && v !== '') o.c++;
+                    }
+                });
+                let m = new Map();
+                acc.forEach((o, k) => {
+                    let out = null;
+                    if (a.func === 'SUM') out = o.s;
+                    else if (a.func === 'AVG') out = o.c ? (o.s / o.c) : null;
+                    else if (a.func === 'MAX') out = o.mx;
+                    else if (a.func === 'MIN') out = o.mn;
+                    else out = o.c;
+                    m.set(k, out);
+                });
+                store.set(a.id, m);
+            });
+            rawData.forEach(r => { let v = fn(r, store); r[name] = (typeof v === 'number' && isFinite(v)) ? v : null; });
             accepted.push(name);
         });
         __appliedCalcNames = accepted;
@@ -8757,13 +8848,33 @@ function applyChartAnalyticsI18N() {
         // bak93：公式只面向事实表数值列——剔除时间表/维度表带来的 日期序号/年份名称 等维度列
         let cols = (Array.isArray(factColumns) && factColumns.length) ? factColumns.slice() : ((columns && columns.length) ? columns : []);
         if (Array.isArray(numericColumns) && numericColumns.length) cols = cols.filter(c => numericColumns.includes(c));
+        // bak99：占比需要分组维度（SUM(列; 年月名称)），补一组维度列；再加聚合函数模板
+        let dimCols = (Array.isArray(stringColumns) ? stringColumns.slice() : []).filter(c => cols.indexOf(c) < 0 && c !== dateColumn);
+        let aggFns = [
+            ['SUM(', 'SUM( · 求和/合计'],
+            ['AVG(', 'AVG( · 平均'],
+            ['MAX(', 'MAX( · 最大'],
+            ['MIN(', 'MIN( · 最小'],
+            ['COUNT(', 'COUNT( · 计数']
+        ];
         let esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        let isEn = window.currentLang === 'en';
         selects.forEach(sel => {
             let cur = sel.value;
-            let isEn = window.currentLang === 'en';
             sel.innerHTML = '<option value="">' + (isEn ? 'Pick a column…' : '选择列名…') + '</option>' +
-                cols.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
-            if (cur && cols.indexOf(cur) >= 0) sel.value = cur;
+                '<optgroup label="' + (isEn ? 'Columns (formula)' : '数值列（公式）') + '">' +
+                    cols.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('') +
+                '</optgroup>' +
+                (dimCols.length ? '<optgroup label="' + (isEn ? 'Dimension columns (for grouping)' : '维度列（分组用）') + '">' +
+                    dimCols.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('') + '</optgroup>' : '') +
+                '<optgroup label="' + (isEn ? 'Aggregate functions' : '聚合函数') + '">' +
+                    aggFns.map(f => '<option value="' + f[0] + '">' + f[1] + '</option>').join('') +
+                '</optgroup>';
+            if (cur) {
+                let found = false;
+                Array.from(sel.options).forEach(o => { if (o.value === cur) found = true; });
+                if (found) sel.value = cur;
+            }
         });
     }
 
@@ -10743,7 +10854,12 @@ function applyChartAnalyticsI18N() {
             banishShadowStyle.textContent = '#dashboard, #dashboard * { box-shadow: none !important; } #dashboard .remove-btn { display: none !important; }';
             document.head.appendChild(banishShadowStyle);
 
-            let scale = Math.min(2, window.devicePixelRatio || 1);
+            // 第一百零一轮：导出整页截图的分辨率必须恒定、不随宿主显示器的 devicePixelRatio 变化。
+            // 旧公式 Math.min(2, window.devicePixelRatio) 会让同一看板在 1x/1.5x/2x 屏上截出不同分辨率
+            // （602×202 / 903×303 / 1204×404），粘贴进文章后大小与清晰度不一致。
+            // 改用固定倍数（与单图导出 2× 一致），保证任意显示器下都输出恒定的最优清晰度。
+            const DASH_EXPORT_DPR = 2;
+            let scale = DASH_EXPORT_DPR;
 
             let scrollX = window.scrollX || window.pageXOffset || 0;
             let scrollY = window.scrollY || window.pageYOffset || 0;
