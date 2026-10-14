@@ -8849,7 +8849,32 @@ function applyChartAnalyticsI18N() {
         let cols = (Array.isArray(factColumns) && factColumns.length) ? factColumns.slice() : ((columns && columns.length) ? columns : []);
         if (Array.isArray(numericColumns) && numericColumns.length) cols = cols.filter(c => numericColumns.includes(c));
         // bak99：占比需要分组维度（SUM(列; 年月名称)），补一组维度列；再加聚合函数模板
-        let dimCols = (Array.isArray(stringColumns) ? stringColumns.slice() : []).filter(c => cols.indexOf(c) < 0 && c !== dateColumn);
+        // bak100：分组维度只列「事实行里真实存在」的列——原 stringColumns 含维度表整表列（enCols/序号列
+        // 并未合并进事实行，按它们分组所有行键值同为 undefined，会静默算错），故改从行级 columns 派生，
+        // Month/YearMth/各序号列由此自动消失（与对应 名称 列一一重复，保留辨识度高的 名称 列即可）
+        let dimCols = (Array.isArray(columns) ? columns.slice() : []).filter(c =>
+            c !== dateColumn && cols.indexOf(c) < 0 &&
+            (!Array.isArray(numericColumns) || numericColumns.indexOf(c) < 0));
+        // bak100：维度表 1:1 去重——维度表整表被连接键唯一确定，其注入的单一中文显示列与事实表
+        // 连接键分组结果完全相同，只保留中文显示列；连接键仍用于图表/切片器，仅从本下拉剔除
+        (modelRelationships || []).filter(r => r && r.active).forEach(rel => {
+            let zk = rel.factKey;
+            let zc = (rel.zhCols || []).filter(c => c && c !== zk && c !== dateColumn && dimCols.indexOf(c) >= 0);
+            if (zk && zc.length === 1) {
+                if (dimCols.indexOf(zk) >= 0) dimCols = dimCols.filter(c => c !== zk);
+                // 连接键被分类进数值列时（如日本模板的数值国家代码 104/105…）同样剔除——中文名列已是该概念唯一代表
+                if (cols.indexOf(zk) >= 0) cols = cols.filter(c => c !== zk);
+            }
+        });
+        // bak100：时间字段家族去重——序号/英文列与对应「名称」列取值一一对应，分组结果完全相同，
+        // 只保留辨识度高的名称列（年份名称 vs 年序号 等）；若模板没有名称列则保留序号列兜底
+        [['年份名称', '年序号'], ['季度名称', '季度序号'], ['月份名称', '月份序号'],
+         ['年季名称', '年季序号'], ['年月名称', '年月序号'],
+         ['月份名称', 'Month'], ['年月名称', 'YearMth']].forEach(pr => {
+            if (dimCols.indexOf(pr[0]) >= 0 && dimCols.indexOf(pr[1]) >= 0) dimCols = dimCols.filter(c => c !== pr[1]);
+        });
+        // 日期序号 与 日期 一一对应（日期 本就被排除在分组下拉外），同样剔除
+        if (columns.indexOf(dateColumn) >= 0 || columns.indexOf('日期') >= 0) dimCols = dimCols.filter(c => c !== '日期序号');
         let aggFns = [
             ['SUM(', 'SUM( · 求和/合计'],
             ['AVG(', 'AVG( · 平均'],
@@ -8963,6 +8988,17 @@ function applyChartAnalyticsI18N() {
             if (defs.some(d => d.nameZh === nameZh)) { alert('计算字段名称重复：「' + nameZh + '」'); return false; }
             let parsed = parseCalcFormula(formula, baseCols.concat(defs.map(d => d.nameZh)));
             if (!parsed.ok) { alert('「' + nameZh + '」公式有误：' + parsed.error); return false; }
+            // 第一百零二/三??：聚合函数 SUM/AVG/MAX/MIN/COUNT 的「;」后是「分组维度」（如 年月名称/煤种），
+            // 不是第二个被聚合的列。若用户把数值列当维度填（如 AVG(额;量)），每组近似唯一→逐行取值，
+            // 结果明显错误（加权均价请改用 SUM(额)/SUM(量)）。这里给出明确提示，仍可坚持保存。
+            if (Array.isArray(numericColumns)) {
+                let badDims = [];
+                (parsed.aggs || []).forEach(a => (a.dims || []).forEach(dm => { if (numericColumns.indexOf(dm) >= 0) badDims.push(dm); }));
+                if (badDims.length) {
+                    let ok = confirm('「' + nameZh + '」的聚合公式里，分号「;」后应是分组维度（如 年月名称/煤种），但你填的是数值列「' + badDims.join('、') + '」，会被当成逐行分组而逐行取值（并非按量求平均），结果通常错误。\n\n求加权均价请用：SUM(金额列) / SUM(数量列)。\n\n仍要保存吗？');
+                    if (!ok) return false;
+                }
+            }
             defs.push({ nameZh: nameZh, nameEn: nameEn, unit: unit, unitEn: unitEn, formula: formula });
         }
         dashboardConfig.calcFields = defs;
@@ -10491,15 +10527,19 @@ function applyChartAnalyticsI18N() {
     // bak94：高质量缩小绘制——canvas 单步 drawImage 大比例缩小时只做双线性采样（相邻像素），
     // 416px 宽 logo 缩到 76px 会跳过 4/5 像素导致文字发虚；逐级减半直到接近目标再画最后一步，
     // 每一级都保留采样信息，效果接近面积平均重采样，右下角 logo 清晰。
-    function drawImageHiQuality(ctx, img, x, y, w, h) {
+    function drawImageHiQuality(ctx, img, x, y, w, h, pixelScale) {
+        // pixelScale：当前 ctx 的设备像素倍率（超采样合成时传 SS）。逐级减半链的目标宽度
+        // 要按设备像素算（w*pixelScale），否则 2× 画布下链会停在 CSS 尺寸导致最后一步反而放大。
+        let ps = pixelScale || 1;
+        let targetW = w * ps;
         let sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
-        if (!(sw > 0 && sh > 0) || w < 8 || h < 8 || sw <= w * 2) { ctx.drawImage(img, x, y, w, h); return; }
+        if (!(sw > 0 && sh > 0) || targetW < 8 || h * ps < 8 || sw <= targetW * 2) { ctx.drawImage(img, x, y, w, h); return; }
         ctx.save();
         ctx.imageSmoothingEnabled = true;
         try { ctx.imageSmoothingQuality = 'high'; } catch (e) {}
         let cur = img, cw = sw, ch = sh;
-        while (cw > w * 2) {
-            let nw = Math.max(w, Math.floor(cw / 2)), nh = Math.max(h, Math.floor(ch / 2));
+        while (cw > targetW * 2) {
+            let nw = Math.max(targetW, Math.floor(cw / 2)), nh = Math.max(h * ps, Math.floor(ch / 2));
             let off = document.createElement('canvas');
             off.width = nw; off.height = nh;
             let octx = off.getContext('2d');
@@ -10731,9 +10771,10 @@ function applyChartAnalyticsI18N() {
             if (Object.keys(__dyMap).length) tempChart.setOption(opt, true);
         } catch (e) {}
         await new Promise(r => setTimeout(r, 150));
-        // bak95：整图按 2× 渲染（retina）。根因：原合成画布是 520×310 CSS 像素（pixelRatio 1），
-        // 复制到微信再被放大，文字与 logo 一起发虚。改为 SS=2 输出 1040×620，图表位图与右下 logo
-        // 均为高分辨率，粘贴/下载后保持锐利。坐标仍用 CSS 单位（iw/ih），ctx.scale(SS) 负责设备像素映射。
+        // 2026-10-14：输出仍为基线 520×310，但内部按 2× 超采样合成（渲染 + 水印/logo/文字全在
+        // 1040×620 画布上完成），最后整体 2:1 降采样回 520×310。输出尺寸不变（与同事端一致），
+        // 而轴标签、图例、右下 logo 的 sxcoal.com 小字等细小元素都获得 2× 超采样抗锯齿，明显更清晰。
+        // SS 仅控制内部合成倍率；坐标仍用 CSS 单位（iw/ih），ctx.scale(SS) 负责设备像素映射。
         let SS = 2;
         let chartUrl = tempChart.getDataURL({ type: 'png', pixelRatio: SS, backgroundColor: '#ffffff' });
 
@@ -10765,7 +10806,7 @@ function applyChartAnalyticsI18N() {
                 ctx.save();
                 ctx.translate(d.x + lw / 2, d.y + lh / 2);
                 ctx.rotate(-22 * Math.PI / 180);
-                drawImageHiQuality(ctx, logoImg, -lw / 2, -lh / 2, lw, lh);
+                drawImageHiQuality(ctx, logoImg, -lw / 2, -lh / 2, lw, lh, SS);
                 ctx.restore();
             });
             ctx.restore();
@@ -10777,11 +10818,23 @@ function applyChartAnalyticsI18N() {
             ctx.textAlign = 'left';
             ctx.textBaseline = 'bottom';
             ctx.fillText(sourceText, chartLeftEdge, ih - 8);
-            // 右下：Sxcoal logo（等比缩放到原 208x58 比例；520 宽画布下宽 76；bak94 逐级减半重采样保清晰）
+            // 右下：Sxcoal logo（等比缩放到原 208x58 比例；520 宽画布下宽 76；bak94 逐级减半重采样保清晰，
+            // 2026-10-14 起链目标按设备像素（×SS）计算，配合 2× 超采样合成）
             let ctxLw = 76, ctxLh = Math.round(ctxLw * 58 / 208);
-            drawImageHiQuality(ctx, logoImg, iw - 14 - ctxLw, ih - 8 - ctxLh + 1, ctxLw, ctxLh);
+            drawImageHiQuality(ctx, logoImg, iw - 14 - ctxLw, ih - 8 - ctxLh + 1, ctxLw, ctxLh, SS);
         } catch (e) {
             console.warn('downloadChartImage compose failed', e);
+        }
+
+        // 2× 超采样合成完成后，整体 2:1 降采样回基线输出尺寸（520×310），再导出
+        if (SS > 1) {
+            let outCv = document.createElement('canvas');
+            outCv.width = iw; outCv.height = ih;
+            let octx = outCv.getContext('2d');
+            octx.imageSmoothingEnabled = true;
+            try { octx.imageSmoothingQuality = 'high'; } catch (e) {}
+            octx.drawImage(canvas, 0, 0, iw, ih);
+            canvas = outCv;
         }
 
         let url = canvas.toDataURL('image/png');
@@ -12730,7 +12783,17 @@ function setupOverlaySwipe() {
                     ? `　⏱ 时间范围 ${dashboardConfig.dateRange.start} ~ ${dashboardConfig.dateRange.end}${rangeExtended ? '（已跟随新数据扩展）' : ''}`
                     : '';
                 document.getElementById('fileStatus').innerHTML = `✅ 已加载模板: ${file.name}${rangeText}`;
+                // 第一百零二轮：导入模板（含 rawData 计算字段，无论是否有 Excel）时，计算字段此前未被显式物化，
+                // 图表可能在列物化前先渲染一次，导致 进口均价 等折线/数值缺失；度量下拉也选不到计算字段。
+                // 这里先物化（applyCalcFields 会把新字段补进 numericColumns 与度量下拉），再刷新下拉、语言并同步重渲染图表，
+                // 消除"导入后需手动重存计算字段才刷新"的竞态。
+                try { applyCalcFields(); } catch (e) { console.warn('模板计算字段物化失败', e); }
                 populateSelectOptions(); switchLanguage(window.currentLang);
+                // 等看板容器布局就绪（display:block 后尺寸才有效）再重建图表，避免 ECharts 以 0 尺寸初始化
+                // 导致计算字段折线/数值空白；双 rAF 确保一次重排完成。
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    renderCharts(); renderKPIs();
+                }));
             } catch(err) { alert('模板加载失败：' + err.message); console.error(err); }
         };
         reader.readAsText(file);
