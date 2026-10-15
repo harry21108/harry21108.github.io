@@ -3497,9 +3497,15 @@
         let plan = __lfPlanWeak ? __lfPlanWeak.get(filter) : null;
         if (plan && plan.lang === lang && plan.src === getLocalFilterValues(filter)) return plan;
         let values = getLocalFilterValues(filter);
-        let hasTotalSelection = values.some(value => isTotalSelectionValue(value) || isTotalSelectionValue(getMappedValue(value, lang)));
+        // bak112：合计选中只按【原始值】判定，绝不再对「映射后的英文显示值」做 /total/ 子串测试。
+        // 反例：炼焦煤需求量 的英文译名是 "Total Coking Demand"，旧逻辑把它误判成“勾选了合计行”，
+        // 数据里又没有合计行（hasRealTotalRows=false）时 checkLocalFilters 走 continue 放行所有行
+        // → 图表局部筛选整体失效（柱状图变全项目求和、中位数回退全局常数 782）。
+        // isTotalRow 本就基于原始行值判定，筛选侧口径必须一致；筛选值若保存的是英文显示名
+        // （如 "Total"），isTotalSelectionValue(value) 对原始值同样命中，无需映射。
+        let hasTotalSelection = values.some(value => isTotalSelectionValue(value));
         let detailValues = hasTotalSelection
-            ? values.filter(value => !isTotalSelectionValue(value) && !isTotalSelectionValue(getMappedValue(value, lang)))
+            ? values.filter(value => !isTotalSelectionValue(value))
             : values;
         plan = { lang: lang, src: values, values: values, hasTotalSelection: hasTotalSelection, detailValues: detailValues };
         try { if (__lfPlanWeak) __lfPlanWeak.set(filter, plan); } catch (e) {}
@@ -3620,10 +3626,9 @@
     }
 
     function hasExplicitTotalFilter(localFilters) {
+        // bak112：同 getLocalFilterPlan，只按原始值判合计，不做映射显示值子串测试
         return (localFilters || []).some(f =>
-            f.mode !== 'separate' && getLocalFilterValues(f).some(value =>
-                isTotalSelectionValue(value) || isTotalSelectionValue(getMappedValue(value, window.currentLang))
-            )
+            f.mode !== 'separate' && getLocalFilterValues(f).some(value => isTotalSelectionValue(value))
         );
     }
 
