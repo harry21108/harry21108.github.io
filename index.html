@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN" data-page-node-id="CAnHMoegbiEEM9KHpaQCft">
 <head data-page-node-id="gMySsmqlzltaH0qzJHXbaS">
@@ -3268,7 +3269,7 @@
         let rows = summLatestPeriodRows();
         let detail = rows.filter(d => !isTotalRow(d));
         let use = detail.length ? detail : rows;
-        return summFmt(calcValueForField(use, col, 'sum', {}), col, isEn);
+        return summValueOrRateSpan(col, calcValueForField(use, col, 'sum', {}), isEn);
     }
     // 第六十三轮：品类列表切分与匹配。
     // ⚠️ 关键：分隔符只认 、 ， , ; ； + —— **绝不能按空格切**，因为品类名本身常带空格
@@ -3321,7 +3322,7 @@
         let rows = summLatestPeriodRows();
         let matched = summPickRowsByCat(rows, cat, isEn);
         if (!matched || !matched.length) return '-';
-        return summFmt(calcValueForField(matched, col, 'sum', {}), col, isEn);
+        return summValueOrRateSpan(col, calcValueForField(matched, col, 'sum', {}), isEn);
     }
     // 第六十二轮：同环比箭头着色。
     // 颜色按语言惯例区分——中文红涨绿跌；英文绿涨红跌（西方惯例）。箭头字形中英文统一为 ↑/↓，
@@ -3337,6 +3338,15 @@
         let color = r > 0 ? upColor : downColor;
         let arrow = r > 0 ? '↑' : '↓';
         return `<span style="color:${color};font-weight:700;">${arrow}${Math.abs(r).toFixed(2)}%</span>`;
+    }
+    // bak110：综述引用事实表同环比列（{col}/{row}/{cum} 指向「同比/环比/…」列）时，
+    // 与自动计算（{yoy}/{mom}/…）统一渲染为 ↑↓ 箭头 + 红涨绿跌着色，不再输出裸「-7.70 %」。
+    // 原表同环比列值已 ×100（用户口径），直接交给 summRateSpan，不做任何缩放。
+    // 非比率列完全走原 summFmt，行为不变。
+    function summValueOrRateSpan(col, num, isEn) {
+        let v = Number(num);
+        if (isRateColumn(col) && isFinite(v)) return summRateSpan(v, isEn);
+        return summFmt(num, col, isEn);
     }
     // 第六十三轮：同环比/累计类占位符支持「|品类」第二参数（与 {row} 同款语法，含 ! 排除、多品类合并）。
     // 写法：{yoy:出口量|27011200 - Bituminous Coal、27011900 - Other Coal}
@@ -3366,7 +3376,7 @@
             let detail = rows.filter(d => !isTotalRow(d));
             use = detail.length ? detail : rows;
         }
-        return summFmt(calcValueForField(use, col, 'sum', {}), col, isEn);
+        return summValueOrRateSpan(col, calcValueForField(use, col, 'sum', {}), isEn);
     }
     function summYtdRate(col, isEn, cat) {
         if (!dateColumn || !maxDateStr) return '';
@@ -14024,3 +14034,4 @@ function setupOverlaySwipe() {
 </script>
 </body>
 </html>
+
