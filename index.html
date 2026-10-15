@@ -436,10 +436,10 @@
     .lf-del-btn { background: transparent; border: none; color: #DC2626; cursor: pointer; padding: 0 4px; font-size: 14px; align-self: center; }
     .lf-body { display: flex; gap: 8px; align-items: stretch; }
     .lf-body > * { min-width: 0; }
-    .lf-options { flex: 1 1 58%; max-height: 70px; overflow-y: auto; overflow-x: hidden; border: 1px solid #D1D5DB; border-radius: 4px; padding: 3px 6px; background: #fff; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); column-gap: 6px; row-gap: 0; }
+    .lf-options { flex: 1 1 58%; max-height: 132px; overflow-y: auto; overflow-x: hidden; border: 1px solid #D1D5DB; border-radius: 4px; padding: 3px 6px; background: #fff; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); column-gap: 6px; row-gap: 0; }
     .lf-options label { display: flex; align-items: center; gap: 4px; padding: 0; line-height: 17px; font-size: 12px; font-weight: normal; cursor: pointer; min-width: 0; }
     .lf-options label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .lf-tags { flex: 1 1 42%; max-height: 70px; overflow-y: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 3px; min-height: 24px; border: 1px solid #D1D5DB; border-radius: 4px; padding: 3px 6px; background: #FAFAFA; }
+    .lf-tags { flex: 1 1 42%; max-height: 132px; overflow-y: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 3px; min-height: 24px; border: 1px solid #D1D5DB; border-radius: 4px; padding: 3px 6px; background: #FAFAFA; }
     .lf-tag { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 10px; font-size: 11px; color: #92400E; }
     .lf-tag-x { cursor: pointer; color: #B45309; font-weight: bold; }
     
@@ -1026,6 +1026,22 @@
             <div class="form-group" id="chartY2Group" style="display:none;" data-page-node-id="rAAV2Man26sNHbURqhOnWU">
                 <label data-page-node-id="7eoxCj76tTxAUWeSCCqzWY">Y 轴次度量</label>
                 <select id="chartY2Sel" data-page-node-id="8BjcAtKLmJiBlg7xZBtknj"></select>
+            </div>
+        </div>
+        <div class="form-row" data-page-node-id="metricNameRow01">
+            <div class="form-group" data-page-node-id="metricNameYGrp">
+                <label>主度量自定义名称 <span style="font-weight:400; color:#6B7280; font-size:11px;">（图例/悬停显示，留空用默认）</span></label>
+                <div style="display:flex; gap:6px;">
+                    <input type="text" id="chartYNameZh" placeholder="中文显示名" style="flex:1 1 50%; min-width:0;">
+                    <input type="text" id="chartYNameEn" placeholder="English name" style="flex:1 1 50%; min-width:0;">
+                </div>
+            </div>
+            <div class="form-group" id="chartY2NameGroup" style="display:none;" data-page-node-id="metricNameY2Grp">
+                <label>次度量自定义名称 <span style="font-weight:400; color:#6B7280; font-size:11px;">（留空用默认）</span></label>
+                <div style="display:flex; gap:6px;">
+                    <input type="text" id="chartY2NameZh" placeholder="中文显示名" style="flex:1 1 50%; min-width:0;">
+                    <input type="text" id="chartY2NameEn" placeholder="English name" style="flex:1 1 50%; min-width:0;">
+                </div>
             </div>
         </div>
         <div class="form-row" data-page-node-id="U4fPescDRogELsK8gtGUbq">
@@ -2196,6 +2212,19 @@
         if (i < 0) return null;
         return { field: s.slice(0, i), rateType: s.slice(i + RATE_METRIC_SEP.length) };
     }
+    // 2026-10-15：图表级「度量自定义显示名」（Y 主/次度量，含自动计算的变化率）。
+    // 长表结构（日期/煤种/项目/值）下，"值"列改名后图例仍只能显示"数量·同比%"这类通用名，
+    // 无法表达业务含义（如"有效供应量·同比"）。按图表覆盖：中英文各存一个，留空回退默认。
+    function getMetricDisplayNameOverride(cfg, which) {
+        try {
+            if (!cfg) return '';
+            let isEn = window.currentLang === 'en';
+            let v = (which === 'y2')
+                ? (isEn ? cfg.y2NameEn : cfg.y2NameZh)
+                : (isEn ? cfg.yNameEn : cfg.yNameZh);
+            return String(v == null ? '' : v).trim();
+        } catch (e) { return ''; }
+    }
     function buildRateMetricOptions() {
         try {
             if (!dateColumn || !Array.isArray(numericColumns) || !numericColumns.length) return '';
@@ -2205,6 +2234,9 @@
             let isEn = window.currentLang === 'en';
             let out = [];
             numericColumns.forEach(c => {
+                // 2026-10-15：日期列被 analyzeColumnTypes 归入数值列（日期序号），但它是对数维度，
+                // "日期·MoM%/YoY%"没有任何业务含义 —— 选项里剔除（bak104 图例自定义名轮发现）。
+                if (c === dateColumn) return;
                 // 第四十一轮：累计口径的环比没有意义（累计值只增不减，环比恒为正且无业务含义），
                 // 非率类的累计字段只提供同比；率类累计字段（如 累计同比%）走差分，两种都保留。
                 let isCumField = /累计/i.test(c);
@@ -5613,6 +5645,14 @@
         // 历史数据需要放开"年份"筛选，否则 2025/2026 这类年份筛选会把历史年份全部过滤掉
         let baseFilters = filters.filter(f => !isYearLikeField(f.field));
         let rows = filteredData.filter(d => checkLocalFilters(d, baseFilters, filteredData));
+        // 与 computeHistoricalValueMap 同步：补齐"分别展示"(separate) 局部筛选，
+        // 否则历史同期区间带会把未选中的细分取值一起加总，区间远高于可见系列。
+        let separateFiltersHR = filters.filter(f => f.mode === 'separate' && getLocalFilterValues(f).length > 0);
+        if (separateFiltersHR.length > 0) {
+            rows = rows.filter(d => separateFiltersHR.every(f =>
+                getLocalFilterValues(f).some(value => localFilterValueMatches(d[f.field], value))
+            ));
+        }
         if (opts.explicitlyRequestedTotal && !opts.isTopN) rows = rows.filter(d => isTotalRow(d));
         else rows = rows.filter(d => !isTotalRow(d));
         if (rows.length === 0) return null;
@@ -6013,6 +6053,16 @@
         let yearFilters = filters.filter(f => isYearLikeField(f.field) && getLocalFilterValues(f).length > 0);
         let baseFilters = filters.filter(f => !isYearLikeField(f.field));
         let rows = filteredData.filter(d => checkLocalFilters(d, baseFilters, filteredData));
+        // 与可见系列对齐：局部筛选的"分别展示"(separate) 模式在 checkLocalFilters 中被跳过
+        // （line ~3508），这里必须手动按 separateMatch 再过滤一次，否则同期均值/中位/最大/最小/±1σ
+        // 会混入【未选中的】细分取值（如 项目 维度只勾了 2 项却把全部 13 项加总），
+        // 导致参考线远高于可见系列——这是"中位数异常高"的根因。
+        let separateFilters = filters.filter(f => f.mode === 'separate' && getLocalFilterValues(f).length > 0);
+        if (separateFilters.length > 0) {
+            rows = rows.filter(d => separateFilters.every(f =>
+                getLocalFilterValues(f).some(value => localFilterValueMatches(d[f.field], value))
+            ));
+        }
         // 与 buildHistRangeSeries 对齐：用户显式勾选"合计"且不在 Top N 模式下才保留合计行
         let isTopN = !!opts.isTopN;
         let explicitlyRequestedTotal = !!opts.explicitlyRequestedTotal;
@@ -7079,6 +7129,8 @@
             let mainName = mainRateMetric
                 ? (getMappedValue(mainRateMetric.field, window.currentLang) + ' · ' + (isEn ? RATE_PERIOD_LABEL_EN[mainRateMetric.rateType] : RATE_PERIOD_LABEL[mainRateMetric.rateType]) + (isRateColumn(mainRateMetric.field) ? rateDiffSuffix(isEn) : '%'))
                 : getMappedValue(config.yField, window.currentLang);
+            // 2026-10-15：主度量自定义显示名优先（有系列细分时图例名来自细分取值，此覆盖不参与）
+            mainName = getMetricDisplayNameOverride(config, 'y') || mainName;
             let seriesObj = { name: mainName, data: yData, connectNulls: connectNulls, symbol: 'none', showSymbol: false, symbolSize: 0 };
             if(config.type === 'line') { seriesObj.type = 'line'; seriesObj.legendIcon = 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z'; }
             else if(config.type === 'combo') seriesObj.type = 'bar';
@@ -7132,6 +7184,8 @@
                 let y2IsDiff = isRateColumn(rm.field);
                 let y2UnitTxt = y2IsDiff ? rateDiffUnit(isEn) : '%';
                 let y2Name = getMappedValue(rm.field, window.currentLang) + ' · ' + rateLabel + (y2IsDiff ? rateDiffSuffix(isEn) : '%');
+                // 2026-10-15：次度量（自动计算变化率）自定义显示名优先
+                y2Name = getMetricDisplayNameOverride(config, 'y2') || y2Name;
                 let niceMin2r = computeNiceMin(finalY2Data);
                 option.yAxis.push({
                     type: 'value', name: y2UnitTxt, min: niceMin2r, splitLine: { show: false },
@@ -7175,7 +7229,8 @@
                 });
                 let niceMin2 = computeNiceMin(finalY2Data);
                 option.yAxis.push({ type: 'value', name: unitY2, min: niceMin2, splitLine: { show: false }, axisLabel: axisLabelConfigY2, alignTicks: true });
-                let y2SeriesNamePlain = getMappedValue(config.yField2, window.currentLang);
+                // 2026-10-15：次度量（普通度量或原始比率列）自定义显示名优先
+                let y2SeriesNamePlain = getMetricDisplayNameOverride(config, 'y2') || getMappedValue(config.yField2, window.currentLang);
                 y2SeriesRef.name = y2SeriesNamePlain;
                 seriesList.push({ name: y2SeriesNamePlain, type: 'line', yAxisIndex: 1, data: finalY2Data, connectNulls: false, symbol: 'none', showSymbol: false, symbolSize: 0, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
             }
@@ -7788,6 +7843,9 @@
     function toggleChartFields() {
         let type = document.getElementById('chartTypeSel').value;
         document.getElementById('chartY2Group').style.display = (type === 'combo') ? 'block' : 'none';
+        // 2026-10-15：次度量自定义名称输入组与 Y2 下拉同显隐（仅组合图有次度量）
+        let y2NameGrp = document.getElementById('chartY2NameGroup');
+        if (y2NameGrp) y2NameGrp.style.display = (type === 'combo') ? 'block' : 'none';
         // 系列/堆叠维度在柱状图、条形图、折线图、面积图、组合图、季节图中均可用
         let hasSub = type.includes('bar') || type.includes('horizontal') || type === 'line' || type.includes('area') || type === 'combo' || type === 'seasonal-lines';
         document.getElementById('chartSubGroup').style.display = hasSub ? 'block' : 'none';
@@ -8001,7 +8059,16 @@ function computeAvailableHistYears() {
     let filters = config.localFilters || [];
     let yearFilters = filters.filter(f => isYearLikeField(f.field) && getLocalFilterValues(f).length > 0);
     let baseFilters = filters.filter(f => !isYearLikeField(f.field));
-    let rows = filteredData.filter(d => checkLocalFilters(d, baseFilters, filteredData)).filter(d => !isTotalRow(d));
+    let rows = filteredData.filter(d => checkLocalFilters(d, baseFilters, filteredData));
+    // 与 computeHistoricalValueMap / buildHistRangeSeries 同步：补齐"分别展示"(separate) 局部筛选，
+    // 否则"实际可用年数"提示会把未选中的细分取值一并计入，数字偏大。
+    let separateFiltersHint = filters.filter(f => f.mode === 'separate' && getLocalFilterValues(f).length > 0);
+    if (separateFiltersHint.length > 0) {
+        rows = rows.filter(d => separateFiltersHint.every(f =>
+            getLocalFilterValues(f).some(value => localFilterValueMatches(d[f.field], value))
+        ));
+    }
+    rows = rows.filter(d => !isTotalRow(d));
     if (rows.length === 0) return null;
     let allYears = new Set();
     rows.forEach(row => {
@@ -8357,7 +8424,9 @@ function applyChartAnalyticsI18N() {
         optionsDiv.innerHTML = vals.map(v => {
             let checked = selVals.includes(v) ? 'checked' : '';
             let label = getMappedValue(v, window.currentLang);
-            return `<label class="lf-option" style="display:flex; align-items:center; gap:6px; padding:4px; font-size:12px; cursor:pointer; border-radius:4px;" data-label="${label.toLowerCase()}">
+            // 2026-10-15：超长取值名单行省略号截断（如 Thermal S…）——补 title 悬停看全名
+            let titleAttr = String(label).replace(/"/g, '&quot;');
+            return `<label class="lf-option" style="display:flex; align-items:center; gap:6px; padding:4px; font-size:12px; cursor:pointer; border-radius:4px;" data-label="${label.toLowerCase()}" title="${titleAttr}">
                 <input type="checkbox" class="lf-check" value="${v}" ${checked} onchange="updateLocalFilterTags(this)">
                 <span>${label}</span>
             </label>`;
@@ -9555,6 +9624,8 @@ function applyChartAnalyticsI18N() {
         document.getElementById('chartTitleZh').value = ''; document.getElementById('chartTitleEn').value = '';
         document.getElementById('chartNoteZh').value = ''; document.getElementById('chartNoteEn').value = '';
         document.getElementById('chartSourceZh').value = ''; document.getElementById('chartSourceEn').value = '';
+        // 2026-10-15：新建图表时清空度量自定义显示名
+        ['chartYNameZh', 'chartYNameEn', 'chartY2NameZh', 'chartY2NameEn'].forEach(n => { let el = document.getElementById(n); if (el) el.value = ''; });
         document.getElementById('chartLocalFilters').innerHTML = '';
         document.getElementById('chartTimeScopeSel').value = 'all';
         document.getElementById('chartTargetValue').value = '';
@@ -9582,6 +9653,11 @@ function applyChartAnalyticsI18N() {
         toggleChartFields();
         document.getElementById('chartSubSel').value = c.subField ? c.subField : "";
         document.getElementById('chartYSel').value = c.yField; if(c.yField2) document.getElementById('chartY2Sel').value = c.yField2;
+        // 2026-10-15：回填度量自定义显示名（留空表示用默认）
+        (function () {
+            let m = { chartYNameZh: c.yNameZh, chartYNameEn: c.yNameEn, chartY2NameZh: c.y2NameZh, chartY2NameEn: c.y2NameEn };
+            Object.keys(m).forEach(n => { let el = document.getElementById(n); if (el) el.value = m[n] || ''; });
+        })();
 
         document.getElementById('chartTimeScopeSel').value = c.timeScope || 'all';
         document.getElementById('chartCustomStart').value = c.customStart || ''; document.getElementById('chartCustomEnd').value = c.customEnd || '';
@@ -9639,7 +9715,12 @@ function applyChartAnalyticsI18N() {
             sourceZh: (function () { let v = (document.getElementById('chartSourceZh').value || '').trim(); return (v && v !== getGlobalSource('zh')) ? v : ''; })(),
             sourceEn: (function () { let v = (document.getElementById('chartSourceEn').value || '').trim(); return (v && v !== getGlobalSource('en')) ? v : ''; })(),
             xField: document.getElementById('chartXSel').value,
-            subField: document.getElementById('chartSubSel').value || null, yField: document.getElementById('chartYSel').value, 
+            subField: document.getElementById('chartSubSel').value || null, yField: document.getElementById('chartYSel').value,
+            // 2026-10-15：度量自定义显示名（图例/悬停用，留空回退默认字段名）
+            yNameZh: (function () { let el = document.getElementById('chartYNameZh'); return el ? (el.value || '').trim() : ''; })(),
+            yNameEn: (function () { let el = document.getElementById('chartYNameEn'); return el ? (el.value || '').trim() : ''; })(),
+            y2NameZh: (function () { let el = document.getElementById('chartY2NameZh'); return el ? (el.value || '').trim() : ''; })(),
+            y2NameEn: (function () { let el = document.getElementById('chartY2NameEn'); return el ? (el.value || '').trim() : ''; })(),
             yField2: type === 'combo' ? document.getElementById('chartY2Sel').value : null, timeScope: document.getElementById('chartTimeScopeSel').value,
             customStart: document.getElementById('chartCustomStart').value, customEnd: document.getElementById('chartCustomEnd').value,
             analytics: (function() {
