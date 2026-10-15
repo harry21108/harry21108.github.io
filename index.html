@@ -13726,6 +13726,23 @@ function setupOverlaySwipe() {
                 }
             } catch (e) { console.warn('[导出] 外链脚本清理失败：', e); }
 
+            // 第六十六轮：导出页锁定视口，防 App WebView（MIUI 等）横屏后缓存错误布局视口。
+            // 编辑器页的 viewport 是 width=device-width,initial-scale=1.0（无锁），克隆进导出页会让
+            // WebView 在旋屏时自行套用缩放并把「横屏布局宽度」缓存进列表页 —— 正是「排版错乱」的根因之一。
+            // 导出页强制锁视口（与图表嵌入片段 11560 同源），让布局不被 WebView 自行缩放。
+            try {
+                let __vp = exportRoot.querySelector('meta[name="viewport"]');
+                if (__vp) {
+                    __vp.setAttribute('content', 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no');
+                } else {
+                    let __m = exportRoot.ownerDocument.createElement('meta');
+                    __m.setAttribute('name', 'viewport');
+                    __m.setAttribute('content', 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no');
+                    let __h = exportRoot.querySelector('head');
+                    if (__h) __h.insertBefore(__m, __h.firstChild);
+                }
+            } catch (e) { console.warn('[导出] 视口锁定失败：', e); }
+
             // 第五十轮：导出页 <head> 写入 description（= 全盘综述）与 keywords（大标题 + 综述里提取的名词性词/词组）
             try {
                 const exportHead = exportRoot.querySelector('head');
