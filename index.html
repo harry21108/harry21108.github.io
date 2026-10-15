@@ -11537,7 +11537,7 @@ function generateChartEmbedCode(chartId) {
 <html lang="${isEn ? 'en' : 'zh-CN'}">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>${escapeHtml(title)} · ${escapeHtml(langText)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11960,6 +11960,26 @@ function fit() {
   if (mainInstance) { mainInstance.resize(); retunePieInst(mainInstance); }
   if (zoomInstance) { zoomInstance.resize(); retunePieInst(zoomInstance); }
 }
+// 第六十五轮同源：部分 Android / MIUI WebView 旋屏后 canvas 几何卡在旧宽度
+// （documentElement.clientWidth 长期报缓存的横屏值，resize 不再派发），
+// 主图表现为「右半截不可见 / 宽度为 0 / 排版错乱」。resize 一次通常不够，
+// 需按当前容器宽度重建实例。
+function maybeRebuildIfStuck() {
+  try {
+    var el = document.getElementById('mainChart');
+    if (!el || !mainInstance || typeof mainInstance.getWidth !== 'function') return;
+    var cw = el.clientWidth || 0;
+    var iw = mainInstance.getWidth() || 0;
+    if (cw > 0 && iw > 0 && Math.abs(cw - iw) > 6) {
+      var saved = mainInstance.getOption();
+      mainInstance.dispose();
+      mainInstance = init(el);
+      mainInstance.setOption(saved);
+      mainInstance.resize();
+      if (typeof retunePieInst === 'function') retunePieInst(mainInstance);
+    }
+  } catch (e) {}
+}
 function bootstrap() {
   let mainEl = document.getElementById('mainChart');
   let zoomEl = document.getElementById('zoomChart');
@@ -11978,24 +11998,36 @@ function bootstrap() {
   window.addEventListener('resize', fit);
   
   window.addEventListener('orientationchange', function () {
-    setTimeout(fit, 350);
+    [350, 700, 1200].forEach(function (t) { setTimeout(fit, t); });
+    setTimeout(maybeRebuildIfStuck, 1400);
     try {
       var zm = document.getElementById('zoomModal');
       var zbox = document.getElementById('zoomBox');
       if (zm && zbox && zm.classList.contains('show')) {
         if (window.innerWidth > window.innerHeight) zbox.classList.add('landscape-box');
         else zbox.classList.remove('landscape-box');
-        setTimeout(fit, 420);
-        setTimeout(fit, 800);
+        [420, 800].forEach(function (t) { setTimeout(fit, t); });
       }
     } catch (e) {}
   });
+  
+  // visualViewport：App WebView 旋屏后图表宽度归 0 / 卡住的更直接信号（第六十五轮根因）
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', function () {
+      setTimeout(fit, 150);
+      setTimeout(maybeRebuildIfStuck, 400);
+    });
+  }
   
   if (typeof ResizeObserver !== 'undefined') {
     var ro = new ResizeObserver(function () { fit(); });
     if (mainEl) ro.observe(mainEl);
     if (zoomEl) ro.observe(zoomEl);
   }
+  
+  // 低频兜底：布局视口卡住时浏览器不再派发 resize —— 轮询检测几何不一致并重建实例，
+  // 避免「右半截不可见 / 宽度为 0」。与主页 waitForLayoutRestore 同源（每 1.5s 一次，开销极小）。
+  setInterval(function () { maybeRebuildIfStuck(); }, 1500);
 }
 function zoomChart() {
   let m = document.getElementById('zoomModal');
