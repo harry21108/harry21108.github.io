@@ -7000,7 +7000,13 @@
             
             let displaySubCats = [];
             let otherTxt = uiText[window.currentLang].others;
-            if (sortedSubCats.length > topN) { displaySubCats = sortedSubCats.slice(0, topN); displaySubCats.push(otherTxt); } 
+            // bak111：溢出桶改用不可能与真实系列名相撞的哨兵键。
+            // 旧实现直接 push otherTxt（EN="Other"、中文="其它"），若用户某维度的英文译名恰好是
+            // "Other"（如「其他动力煤用量→Other」），取数时 subCat === otherTxt 误判为溢出桶，
+            // slice(topN) 为空 → 该系列恒 0（煤炭供需 EN 堆积图复现）。哨兵仅内部使用，
+            // 生成系列名时映射回 otherTxt，图例/悬浮提示显示不变。
+            let overflowSentinel = otherTxt + '\u0001overflow';
+            if (sortedSubCats.length > topN) { displaySubCats = sortedSubCats.slice(0, topN); displaySubCats.push(overflowSentinel); } 
             else displaySubCats = sortedSubCats;
 
             let isPercent = config.type.startsWith('percent-');
@@ -7015,7 +7021,7 @@
             if (isPercent) {
                 xData.forEach(x => {
                     let total = displaySubCats.reduce((sum, subCat) => {
-                        if (subCat === otherTxt) {
+                        if (subCat === overflowSentinel) {
                             let v = sortedSubCats.slice(topN).reduce((s, c) => s + (groupMap[x][c] || 0), 0);
                             return sum + v;
                         }
@@ -7028,7 +7034,7 @@
             let seriesList = displaySubCats.map((subCat, subIdx) => {
                 // 簇状条形/柱状图多系列对比：让 series name 带"对比维度"前缀（如"Jul 2026"），
                 // 图例自动列出每个月份，方便用户一眼看出"本月 vs 上月 vs 去年同期"。
-                let seriesObj = { name: subCat, connectNulls: (isLineFamily && !isArea), symbol: 'none', showSymbol: false, symbolSize: 0 };
+                let seriesObj = { name: subCat === overflowSentinel ? otherTxt : subCat, connectNulls: (isLineFamily && !isArea), symbol: 'none', showSymbol: false, symbolSize: 0 };
                 if (isLineFamily) {
                     seriesObj.type = 'line';
                     seriesObj.legendIcon = 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z';
@@ -7043,7 +7049,7 @@
                 
                 seriesObj.data = xData.map(x => {
                     let rawVal;
-                    if (subCat === otherTxt) {
+                    if (subCat === overflowSentinel) {
                         if (groupMap[x] === undefined) return null;
                         rawVal = sortedSubCats.slice(topN).reduce((sum, c) => {
                             let val = groupMap[x][c];
