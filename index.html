@@ -1161,6 +1161,13 @@
 <script>
     let rawData = [];
     let filteredData = [];
+    // 维度表显示列与事实表外键同名且口径不同（事实表=细分、维度表=合并后大类）时，
+    // 事实表原值会留档到维度表主键列（明细口径）；此映射用于局部筛选兜底：
+    // 用户按细分名勾选的筛选值，在"煤种"列被改成大类后仍应命中。
+    let __dimMergedAltCols = {};
+    // 事实表外键列被维度表的更粗口径覆盖（如 煤种 细分→大类）的列名集合。
+    // 这些列与维度表主键列的分组结果已不同，不能再按 bak100 的「1:1 去重」把任一方从下拉里剔除。
+    let __coarsenedFactKeys = {};
     let columns = [];
     let factColumns = [];
     let stringColumns = [];
@@ -1977,7 +1984,13 @@
 
     function enrichRawDataWithDimensions() {
         if (!rawData || rawData.length === 0) return;
+        __dimMergedAltCols = {};   // 每次重算，防止旧模板的兜底映射残留
 
+        // 阶段一：先为所有关系逐行匹配维度行（只用事实表原始值），阶段二再统一写回。
+        // 原因：维度表显示列可能与事实表外键同名列（如 事实表 煤种=细分值、维度表 煤种=合并后大类），
+        // 写回会覆盖事实表原值；若边 join 边写，后面的关系会拿被覆盖后的值去 join 而失配。
+        // 全局两阶段后所有 join 都基于原始值，关系之间互不影响。
+        let __relPlans = [];
         modelRelationships.filter(r => r.active).forEach(rel => {
             let dimData = window.rawWorkbookData[rel.dimSheet];
             if (!dimData || !dimData.length) return;
@@ -1991,16 +2004,53 @@
             // 只合并被标记为中文显示的列；若未标记，默认合并除英文列外的所有列
             let enColsSet = new Set(rel.enCols || []);
             let zhColsArr = (rel.zhCols && rel.zhCols.length > 0) ? rel.zhCols : Object.keys(dimMap[Object.keys(dimMap)[0]] || {}).filter(c => !enColsSet.has(c));
-            rawData.forEach(fRow => {
-                let fkVal = normalizeJoinKey(fRow[rel.factKey]);
-                let matchedDimRow = dimMap[fkVal];
-                if (matchedDimRow) {
-                    zhColsArr.filter(col => col !== undefined && col !== null && String(col).trim() !== '').forEach(col => {
-                        if (fRow[col] === undefined || fRow[col] === null) {
-                            fRow[col] = matchedDimRow[col];
-                        }
-                    });
+
+            // 逐行匹配：优先用外键列；外键列若已被上一轮改写（粗口径覆盖），回退用维度表主键列
+            //（明细口径）再匹配一次 —— 否则"改了映射后重新应用"时该关系会整条失配，新加的维度列再也注入不进来。
+            let matchedList = rawData.map(fRow => {
+                let hit = dimMap[normalizeJoinKey(fRow[rel.factKey])];
+                if (!hit && rel.dimKey && rel.dimKey !== rel.factKey) {
+                    let alt = fRow[rel.dimKey];
+                    if (alt !== undefined && alt !== null && String(alt).trim() !== '') {
+                        hit = dimMap[normalizeJoinKey(alt)];
+                    }
                 }
+                return hit || null;
+            });
+            __relPlans.push({ rel: rel, zhColsArr: zhColsArr, matchedList: matchedList });
+        });
+
+        // 阶段二：统一写回维度值
+        __relPlans.forEach(plan => {
+            let rel = plan.rel, zhColsArr = plan.zhColsArr, matchedList = plan.matchedList;
+            rawData.forEach((fRow, i) => {
+                let matchedDimRow = matchedList[i];
+                if (!matchedDimRow) return;
+                zhColsArr.filter(col => col !== undefined && col !== null && String(col).trim() !== '').forEach(col => {
+                    let dimVal = matchedDimRow[col];
+                    if (dimVal === undefined || dimVal === null || String(dimVal).trim() === '') return;
+                    let cur = fRow[col];
+                    if (cur === undefined || cur === null) { fRow[col] = dimVal; return; } // 空 → 填维度值（原逻辑）
+                    if (col !== rel.factKey) return;
+                    if (!rel.dimKey || rel.dimKey === col) return;
+                    if (col === dateColumn) return;          // 日期列不做口径替换
+                    if (typeof cur === 'number' || typeof dimVal === 'number') return; // 数值列不做口径替换
+                    // 登记兜底映射（明细口径列）：局部筛选按细分名勾选时仍可命中
+                    __dimMergedAltCols[col] = rel.dimKey;
+                    __coarsenedFactKeys[col] = true;
+                    if (String(cur) === String(dimVal)) return;                            // 相同 → 不动
+                    // 同名但口径不同：且该列正是本关系的"事实表外键"名、维度表另有独立主键列
+                    // （事实表 煤种=细分值，维度表 煤种=合并后大类）→ 维度表给的是同一概念的
+                    // 更粗口径，用户已在「维度表关联」里把它设为中文显示列，故以维度表为准。
+                    // 否则图表按事实表细分值分组，而这些细分值又不在翻译字典里
+                    //（字典是按合并后的值建的）→ 同一张图"部分中文部分英文"，看起来很乱。
+                    // 事实表原值（细分口径）留档到维度表主键列：明细不丢，
+                    // 综述按细分名取值、局部筛选按细分值勾选也仍然有效。
+                    if (col !== rel.factKey) return;
+                    if (!rel.dimKey || rel.dimKey === col) return;
+                    if (fRow[rel.dimKey] === undefined || fRow[rel.dimKey] === null) fRow[rel.dimKey] = cur;
+                    fRow[col] = dimVal;
+                });
             });
         });
 
@@ -3532,7 +3582,13 @@
                 if (totalMatch || !hasRealTotalRows) continue;
             }
             let rowVal = String(row[f.field] || '');
-            if(!values.some(value => localFilterValueMatches(rowVal, value))) return false;
+            if(!values.some(value => localFilterValueMatches(rowVal, value))) {
+                // 兜底：维度表把同名事实列改成更粗口径后（煤种 细分→大类），
+                // 用户原先按细分名勾选的筛选值仍应命中（明细口径留档在维度表主键列）。
+                let altCol = __dimMergedAltCols[f.field];
+                let altVal = altCol ? String(row[altCol] || '') : '';
+                if (!altVal || !values.some(value => localFilterValueMatches(altVal, value))) return false;
+            }
         }
         return true;
     }
@@ -8952,6 +9008,9 @@ function applyChartAnalyticsI18N() {
         // 连接键分组结果完全相同，只保留中文显示列；连接键仍用于图表/切片器，仅从本下拉剔除
         (modelRelationships || []).filter(r => r && r.active).forEach(rel => {
             let zk = rel.factKey;
+            // 第六十八轮：外键列若已被维度表换成更粗口径（煤种 细分→大类），它与维度表主键列
+            // （明细）分组结果已不同，二者都不是对方的重复项 → 不做 1:1 去重，两个都保留在维度下拉。
+            if (zk && __coarsenedFactKeys[zk]) return;
             let zc = (rel.zhCols || []).filter(c => c && c !== zk && c !== dateColumn && dimCols.indexOf(c) >= 0);
             if (zk && zc.length === 1) {
                 if (dimCols.indexOf(zk) >= 0) dimCols = dimCols.filter(c => c !== zk);
