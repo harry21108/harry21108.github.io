@@ -3309,8 +3309,12 @@
         let spec = summCatSpec(cat, isEn);
         if (!spec) return null;
         let src = (pool || []).slice();
+        // 第六十七轮：若品类规格本身指向合计行（合计/总计/total/subtotal/sum…），则不把合计行从候选池剔除，
+        // 否则 {col:列|合计}/{row:列|合计} 永远匹配不到数据里的合计行（isTotalRow 会用正则把它判为合计而排除），
+        // 渲染成“-”。仅当用户显式要合计时才放行合计行；普通品类（动力煤…）仍排除合计行以避免重复计数。
+        let totalSeeking = spec.cats.some(t => /合计|总计|小计|total|subtotal|grand\s*total|sum/i.test(t));
         let detail = src.filter(d => !isTotalRow(d));
-        let base = detail.length ? detail : src;
+        let base = (detail.length && !totalSeeking) ? detail : src;
         let hit = base.filter(d => summRowHitCat(d, spec.cats, isEn, false));
         if (!hit.length) hit = base.filter(d => summRowHitCat(d, spec.cats, isEn, true));
         if (spec.excludeMode) return base.filter(d => hit.indexOf(d) === -1);
