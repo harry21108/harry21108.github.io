@@ -7314,6 +7314,55 @@
                 } else {
                     option.legend = { data: lgDataY };
                 }
+                // bak124：tooltip 顺序与图例一致（最新年份在最上面）。ECharts 默认按 series 数组
+                // 顺序渲染 tooltip，而年份图的 series 已按组内柱升序排，不处理会出现「图例降序、
+                // tooltip 却旧年份在上」的相反顺序（用户反馈：鼠标移上去显示的数据顺序跟图例反了）。
+                // 做法（双重保险）：
+                //   ① tooltip.order='seriesDesc'——默认模板渲染路径（含嵌入页：序列化会丢弃函数
+                //      formatter，只剩 order 生效）整体逆序，无辅助系列的纯年份图 tooltip 也是最新在上；
+                //   ② 包一层 formatter 按 legend.data（=lgDataY）精确排序 params——MA 线/区间带等
+                //      辅助系列本就在 legend.data 末尾，排序后仍排在年份之后，不会被 ① 翻到最上面；
+                //      已有 formatter（统计带/区间带接管）时只包排序，不破坏其内容。
+                if (option.tooltip) option.tooltip.order = 'seriesDesc';
+                if (option.tooltip) {
+                    let lgRankY = new Map();
+                    lgDataY.forEach((n, i) => { if (n != null && !lgRankY.has(n)) lgRankY.set(n, i); });
+                    let sortPsY = ps => {
+                        let a = Array.isArray(ps) ? ps : [ps];
+                        if (lgRankY.size > 1) {
+                            a = a.slice().sort((x, y) => {
+                                let rx = lgRankY.has(x.seriesName) ? lgRankY.get(x.seriesName) : 1e9;
+                                let ry = lgRankY.has(y.seriesName) ? lgRankY.get(y.seriesName) : 1e9;
+                                return rx - ry;
+                            });
+                        }
+                        return a;
+                    };
+                    let origFmtY = option.tooltip.formatter;
+                    if (typeof origFmtY === 'function') {
+                        option.tooltip.formatter = ps => origFmtY(sortPsY(ps));
+                    } else {
+                        // 一旦使用自定义 formatter，valueFormatter 不再生效，数值改由这里统一格式化
+                        // （沿用 option 初始化时 valueFormatter 的口径：Y2 系列用 unitY2，其余 unitY1）
+                        option.tooltip.valueFormatter = undefined;
+                        option.tooltip.formatter = function (params) {
+                            let arr = sortPsY(params);
+                            if (!arr.length) return '';
+                            let head = (arr[0].axisValueLabel != null && arr[0].axisValueLabel !== undefined) ? arr[0].axisValueLabel : arr[0].name;
+                            let lines = ['<div style="font-weight:600; margin-bottom:3px;">' + head + '</div>'];
+                            arr.forEach(p => {
+                                // 隐形下界纯技术系列，不进 tooltip
+                                if (p.seriesName === HIST_RANGE_LOWER || p.seriesName === STAT_BAND_LOWER) return;
+                                let v = (p.value && typeof p.value === 'object') ? p.value.value : p.value;
+                                let uY = (p.seriesName === y2SeriesRef.name) ? unitY2 : unitY1;
+                                lines.push('<div style="display:flex; align-items:center; gap:6px;">' + (p.marker || '') +
+                                    '<span style="flex:1;">' + p.seriesName + '</span>' +
+                                    '<span style="font-weight:600;">' + formatChartNumber(adaptAxisValueToUnit(v, uY, isEn)) + '</span></div>');
+                            });
+                            return lines.join('');
+                        };
+                    }
+                }
             }
         } else {
             let yData = xData.map(x => groupMap[x] === undefined ? null : groupMap[x]);
