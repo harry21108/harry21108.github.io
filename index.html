@@ -3189,11 +3189,42 @@
         return dateStr;
     }
 
+    // 第六十九轮：综述「当年累计」的**时间区间**标签。
+    // 与 {period}（最新期，如 2026年8月）配套：{ytd}/{ytdperiod} 输出本年 1 月 1 日至最新期的区间。
+    // 例（月度）：中文「2026年1-9月」、英文「Jan–Sep 2026」；
+    //     日度：中文「2026年1月1日-9月30日」、英文「Jan 1–Sep 30, 2026」；
+    //     年度：与 {period} 一致（整年）。
+    function formatYtdLabel(dateStr, isEn) {
+        if (!dateStr) return '';
+        let y = String(dateStr).substring(0, 4);
+        if (!/^\d{4}$/.test(y)) return formatDateLabel(dateStr, isEn);
+        let monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        if (isMonthlyData && dateStr.length >= 7) {
+            let m = parseInt(dateStr.substring(5, 7));
+            if (!m || m < 1 || m > 12) return formatDateLabel(dateStr, isEn);
+            if (m === 1) return formatDateLabel(dateStr, isEn);            // 累计到 1 月 = 单月，直接用 {period}
+            return isEn ? `Jan–${monthNames[m - 1]} ${y}` : `${y}年1-${m}月`;
+        }
+        if (dateStr.length >= 10) {
+            let m = parseInt(dateStr.substring(5, 7)), d = parseInt(dateStr.substring(8, 10));
+            if (!m || !d) return formatDateLabel(dateStr, isEn);
+            if (m === 1 && d === 1) return formatDateLabel(dateStr, isEn);
+            return isEn
+                ? `Jan 1–${monthNames[m - 1]} ${d}, ${y}`
+                : `${y}年1月1日-${m}月${d}日`;
+        }
+        return formatDateLabel(dateStr, isEn);                              // 年度数据：整年累计
+    }
+
     // ===== 综述模板占位符填充引擎（bak76） =====
     // 把「全局设置→综述与页脚」里中/英文综述框当作模板，占位符按当前数据自动填充：
     //   {period}            最新期标签，如「2026年8月」(Aug 2026)
+    //   {ytd}               当年累计的**时间区间**标签，如「2026年1-9月」(Jan–Sep 2026)（第六十九轮新增，别名 {ytdperiod}/{cumperiod}）
     //   {col:列名}          该列最新期(全部/合计)数值，带单位
     //   {row:列名|品类}     该列最新期指定品类行的数值，带单位
+    //   ⚡ 第七十轮：品类第二参数支持「限定条件」写法（双维度交叉取数 / "筛选两次"）：
+    //     {col:列名|类别=合计&省份=合计} —— 条件用 列名=值 表示、多个条件用 & 连接（全部满足 = AND）；
+    //     例：{row:当月发电电量|类别=火电&省份=合计} = 火电的全国合计；条件值加 ! 表示排除。
     //   {yoy:列名}/{mom:列名}/{wow:列名}/{dod:列名}  该列最新期同比/月环比/周环比/日环比（带 ↑↓ 箭头，已着色）
     //   {cum:列名}          YTD 累计（当年截至最新期求和），带单位
     //   {cumpct:列名}       YTD 累计同比（当年累计 vs 去年同区间累计）
@@ -3329,11 +3360,36 @@
         return String(cat || '').split(/[、，,;；+]+/).map(t => t.trim()).filter(Boolean);
     }
     // 解析品类规格 → { cats:[取值…], excludeMode:bool }；! 前缀 = 排除该项
+    // bak119（第七十轮）：新增「限定条件」模式 —— 品类规格支持 列名=值 的写法，多个条件用 & 连接（AND 语义），
+    //   用于双维度交叉取数（"筛选两次"）：{col:当月发电电量|类别=合计&省份=合计} = 只取类别合计且省份合计的行（全国合计）；
+    //   {row:当月发电电量|类别=火电&省份=合计} = 火电的全国合计；条件值可加 ! 排除（类别=!合计&省份=广东）。
+    //   含 = / ＝ 即进入限定模式（列名走 summResolveColumn、取值走 summResolveCat，中英文与模糊解析同旧规则）；
+    //   不含 = 的规格完全沿用旧写法（多品类 OR 合并、! 整体排除），向后兼容。
     function summCatSpec(cat, isEn) {
-        let raws = summSplitCats(cat);
+        let raw = String(cat || '');
+        if (!raw.trim()) return null;
+        let lang = isEn ? 'en' : 'zh';
+        if (/[=＝]/.test(raw)) {
+            let conds = raw.split(/[&＆]+/).map(s => s.trim()).filter(Boolean).map(s => {
+                let exclude = s.charAt(0) === '!' || s.charAt(0) === '！';
+                let body = s.replace(/^[!！]/, '');
+                let i = body.search(/[=＝]/);
+                if (i <= 0) return null;
+                let col = summResolveColumn(body.slice(0, i).trim(), lang);
+                let valRaw = body.slice(i + 1).trim();
+                // ! 可写在条件开头（!列=值）或取值开头（列=!值），两者等价 = 该列排除该值
+                let vExclude = valRaw.charAt(0) === '!' || valRaw.charAt(0) === '！';
+                let val = summResolveCat(valRaw.replace(/^[!！]/, ''), lang);
+                if (!col || !val) return null;
+                return { exclude: exclude || vExclude, col: col, val: val };
+            }).filter(Boolean);
+            if (!conds.length) return null;
+            return { conds: conds };
+        }
+        let raws = summSplitCats(raw);
         if (!raws.length) return null;
         let excludeMode = raws.some(r => r.charAt(0) === '!' || r.charAt(0) === '！');
-        let cats = raws.map(r => summResolveCat(r.replace(/^[!！]/, ''), isEn ? 'en' : 'zh')).filter(Boolean);
+        let cats = raws.map(r => summResolveCat(r.replace(/^[!！]/, ''), lang)).filter(Boolean);
         if (!cats.length) return null;
         return { cats: cats, excludeMode: excludeMode };
     }
@@ -3359,6 +3415,24 @@
         let spec = summCatSpec(cat, isEn);
         if (!spec) return null;
         let src = (pool || []).slice();
+        // bak119（第七十轮）：限定条件模式 —— 每个条件各自指定列，行须全部满足（AND）；! 前缀 = 该列不等于该值。
+        // 合计放行规则与旧模式一致：条件值本身指向合计词时，不把合计行从候选池剔除。
+        if (spec.conds) {
+            let totalSeekingC = spec.conds.some(c => /合计|总计|小计|total|subtotal|grand\s*total|sum/i.test(c.val));
+            let detailC = src.filter(d => !isTotalRow(d));
+            let baseC = (detailC.length && !totalSeekingC) ? detailC : src;
+            return baseC.filter(d => spec.conds.every(c => {
+                let cell = d[c.col];
+                let hit = false;
+                if (cell !== null && cell !== undefined) {
+                    let mv = getMappedValue(cell, isEn ? 'en' : 'zh');
+                    let target = summNormName(c.val);
+                    hit = [cell, mv].some(v => v !== null && v !== undefined &&
+                        (String(v) === c.val || summNormName(v) === target));
+                }
+                return c.exclude ? !hit : hit;
+            }));
+        }
         // 第六十七轮：若品类规格本身指向合计行（合计/总计/total/subtotal/sum…），则不把合计行从候选池剔除，
         // 否则 {col:列|合计}/{row:列|合计} 永远匹配不到数据里的合计行（isTotalRow 会用正则把它判为合计而排除），
         // 渲染成“-”。仅当用户显式要合计时才放行合计行；普通品类（动力煤…）仍排除合计行以避免重复计数。
@@ -3460,6 +3534,8 @@
             let p = splitArg(arg), c = summResolveColumn(p[0], lang), cat = p[1] || '';
             switch (type) {
                 case 'period': return formatDateLabel(maxDateStr, isEn);
+                case 'ytd': case 'ytdperiod': case 'cumperiod':
+                    return formatYtdLabel(maxDateStr, isEn);   // 第六十九轮：当年累计的时间区间标签
                 case 'col': return cat ? summRowLatest(c, cat, isEn) : summColLatest(c, isEn);
                 case 'row': return summRowLatest(c, cat, isEn);
                 case 'yoy': return summRate(c, 'yoy', isEn, cat);
@@ -3473,11 +3549,15 @@
         });
     }
 
-    // 图表标题占位符（bak89）：与综述同源，目前支持 {period} = 最新期标签（如 2026年8月 / Aug 2026）。
+    // 图表标题占位符（bak89）：与综述同源，支持 {period} = 最新期标签（如 2026年8月 / Aug 2026）；
+    // 第六十九轮新增 {ytd} = 当年累计区间标签（如 2026年1-9月 / Jan–Sep 2026）。
     // 未命中的占位符原样保留；在卡片渲染、编辑保存、放大弹层、下载/复制图、嵌入页共 5 处统一调用。
     function fillChartTitleText(text) {
         let isEn = (window.currentLang === 'en');
-        return String(text === null || text === undefined ? '' : text).replace(/\{period\}/g, formatDateLabel(maxDateStr, isEn));
+        let s = String(text === null || text === undefined ? '' : text);
+        s = s.replace(/\{period\}/g, formatDateLabel(maxDateStr, isEn));
+        s = s.replace(/\{ytd\}/g, formatYtdLabel(maxDateStr, isEn));
+        return s;
     }
 
     function generateExecutiveSummary() {
@@ -7052,14 +7132,26 @@
                 Object.entries(xObj).forEach(([subKey, val]) => subTotals[subKey] = (subTotals[subKey] || 0) + val);
             });
             let sortedSubCats = Object.entries(subTotals).sort((a, b) => b[1] - a[1]).map(e => e[0]);
-            // 折线/面积图中，若唯一系列维度是年份，则按年份升序排列，便于观察时间先后
+            // bak123（第七十一轮，用户三次反馈后定型）：唯一系列维度是年份时的最终口径——
+            //   ① 组内柱顺序 = 年份升序（旧→新，与参考折线图 image2 一致：2024 最左、2026 最右）；
+            //   ② 图例顺序 = 年份降序（最新年份最左）——在 series 装配后显式覆写 option.legend.data
+            //      （ECharts 图例顺序默认跟随系列顺序，与组内柱序同源，只能靠显式 legend.data 分开）；
+            //   ③ 配色按年份降序取折线族调色板（最新年份最深 #780000 起，项目少时无近黑色），
+            //      与季节折线图 renderSeasonalLinesChart 统一；实现上把调色板前 nYears 个色槽反转。
+            //   TopN 语义：年份系列取「最新 N 年」（而非总值最大 N 年）——先把年份升序排好，
+            //   超量时把头部（最旧）若干年 rotate 到尾部，保证 slice(0, topN) 是最新的 N 年
+            //   （升序）、slice(topN) 是进溢出桶的旧年份，既有溢出聚合逻辑不用改。
+            //   非年份维度（国家/煤种…）维持总值降序 + nonLine 调色板不变。
             let isLineFamily = config.type === 'line' || config.type.includes('area');
-            if (isLineFamily && effectiveSubFields.length === 1 && isYearLikeField(effectiveSubFields[0])) {
-                sortedSubCats.sort((a, b) => {
-                    let ma = String(a).match(/(19|20)\d{2}/), mb = String(b).match(/(19|20)\d{2}/);
-                    let ya = ma ? parseInt(ma[0], 10) : 0, yb = mb ? parseInt(mb[0], 10) : 0;
-                    return ya - yb;
-                });
+            let isYearSeries = effectiveSubFields.length === 1 && isYearLikeField(effectiveSubFields[0]);
+            let yearNum = s => { let m = String(s).match(/(19|20)\d{2}/); return m ? parseInt(m[0], 10) : 0; };
+            if (isYearSeries) {
+                sortedSubCats.sort((a, b) => yearNum(a) - yearNum(b)); // 升序：组内柱从左到右为旧→新
+                let topNPre = (config.topN && config.topN !== 'all') ? parseInt(config.topN) : sortedSubCats.length;
+                if (sortedSubCats.length > topNPre) {
+                    let cut = sortedSubCats.length - topNPre;
+                    sortedSubCats = sortedSubCats.slice(cut).concat(sortedSubCats.slice(0, cut));
+                }
             }
             let topN = (config.topN && config.topN !== 'all') ? parseInt(config.topN) : sortedSubCats.length;
             
@@ -7079,7 +7171,17 @@
             let shouldStack = config.type.includes('stacked') || config.type === 'bar-horizontal' || config.type === 'percent-area' || config.type === 'percent-bar-stacked' || config.type === 'percent-bar-horizontal-stacked';
             let isHorizontal = config.type.includes('horizontal');
 
-            option.color = getDynamicPalette(displaySubCats.length, isLineFamily ? 'line' : 'nonLine');
+            if (isYearSeries) {
+                // bak123：年份系列配色按「年份降序」取折线族调色板（最新年份最深 #780000 起，项目少时
+                // 无近黑——满足用户"项目少时第一个不用最深的黑"），而系列(柱)顺序是年份升序，
+                // 故把前 nYears 个色槽反转、其余色槽（溢出桶）保持原序。这样无需给每个系列写死
+                // itemStyle.color，bar/line/area/stacked 全类型一致生效，辅助线仍占用年份色之后的色槽。
+                let nYears = displaySubCats.filter(c => c !== overflowSentinel).length;
+                let palY = getDynamicPalette(displaySubCats.length, 'line');
+                option.color = palY.slice(0, nYears).reverse().concat(palY.slice(nYears));
+            } else {
+                option.color = getDynamicPalette(displaySubCats.length, isLineFamily ? 'line' : 'nonLine');
+            }
             
             // 预计算百分比（按每个X汇总为100%）
             let percentMap = {};
@@ -7162,7 +7264,15 @@
                         let maUnitSgSub = isEn ? (maInfoSub.enSg || maInfoSub.en) : maInfoSub.zh;
                         let maNameSub = isEn ? `Total ${maPeriodsSub}-${maUnitSgSub} MA` : `合计${maPeriodsSub}${maUnitDisplaySub}移动平均`;
                         seriesList.push({ name: maNameSub, type: 'line', data: maDataSub, lineStyle: { type: 'dotted', width: 2 }, symbol: 'none', showSymbol: false, symbolSize: 0, connectNulls: false, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
-                        option.color = getDynamicPalette(displaySubCats.length + 1, isLineFamily ? 'line' : 'nonLine');
+                        // bak121：年份系列图（含叠加 MA 线）同样用折线族调色板，与非年份图表保持一致；
+                        // bak123：同样把前 nYears 个色槽反转，保证 MA 线仍占用年份色之后的下一个色槽
+                        if (isYearSeries) {
+                            let nYearsMa = displaySubCats.filter(c => c !== overflowSentinel).length;
+                            let palYMa = getDynamicPalette(displaySubCats.length + 1, 'line');
+                            option.color = palYMa.slice(0, nYearsMa).reverse().concat(palYMa.slice(nYearsMa));
+                        } else {
+                            option.color = getDynamicPalette(displaySubCats.length + 1, isLineFamily ? 'line' : 'nonLine');
+                        }
                     }
                 }
             }
@@ -7186,6 +7296,25 @@
             // 同时把 xData 传为 xKeys，让辅助线（avg/median/...）按同期取数
             appendAnalyticsSeries(option, seriesList, config, histRangeSub, xData.length, allSubValues, null, xData, { explicitlyRequestedTotal: explicitlyRequestedTotal, isTopN: isTopN });
             option.series = seriesList;
+            // bak123：年份系列图例显式按年份降序（最新年份在最左）——系列(柱)顺序是年份升序，
+            // 若不覆写，图例会跟随系列顺序变成升序（用户连续反馈"图例顺序对了但图上柱子还是
+            // 旧→新不对/26 年还在最左"的根因：ECharts 中图例顺序与组内柱序同源，只能靠
+            // 显式 legend.data 把「图例降序 + 柱子升序」两者分开）。
+            // 辅助系列（MA 线 / 区间带 / 参考线）排在年份之后；隐形下界系列不进图例。
+            if (isYearSeries) {
+                let yearCats = displaySubCats.filter(c => c !== overflowSentinel);
+                let yearSet = new Set(yearCats);
+                let auxNames = seriesList.map(s => s.name).filter(n => n && !yearSet.has(n) && n !== HIST_RANGE_LOWER && n !== STAT_BAND_LOWER);
+                let lgDataY = yearCats.slice().sort((a, b) => yearNum(b) - yearNum(a)).concat(auxNames);
+                if (option.legend && !Array.isArray(option.legend)) {
+                    option.legend = Object.assign({}, option.legend);
+                    option.legend.data = lgDataY;
+                } else if (Array.isArray(option.legend) && option.legend.length > 0) {
+                    option.legend = option.legend.map((lg, i) => i === 0 ? Object.assign({}, lg, { data: lgDataY }) : lg);
+                } else {
+                    option.legend = { data: lgDataY };
+                }
+            }
         } else {
             let yData = xData.map(x => groupMap[x] === undefined ? null : groupMap[x]);
             
@@ -10796,7 +10925,20 @@ function applyChartAnalyticsI18N() {
             textStyle: { fontSize: 13.5, fontWeight: 'bold', color: '#110303', fontFamily: '"Source Sans 3", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' }
         }];
 
-        let seriesNames = (opt.series || []).filter(s => s && s.name !== HIST_RANGE_LOWER && s.name !== STAT_BAND_LOWER).map(s => s.name);
+        // bak123：主图已显式排好图例顺序时（如年份系列按年份降序、最新在最左，见 updateEChartsInstance
+        // isSub 分支的 legend.data 覆写），下载图/嵌入页沿用该顺序，而非按系列(柱)顺序重建——
+        // 否则下载图/嵌入页的图例顺序会与主图不一致（用户反馈"刷新后还是不对"的同类问题）。
+        // 兼容 legend 的对象/数组两种形态（主图缓存是对象，getOption() 多返回数组）。
+        let seriesNames = (function () {
+            let lg = opt.legend, data = null;
+            if (lg && !Array.isArray(lg) && Array.isArray(lg.data)) data = lg.data;
+            else if (Array.isArray(lg) && lg.length > 0 && Array.isArray(lg[0].data)) data = lg[0].data;
+            if (data) {
+                let names = data.map(d => (d && typeof d === 'object') ? d.name : d).filter(Boolean);
+                if (names.length > 1) return names;
+            }
+            return (opt.series || []).filter(s => s && s.name !== HIST_RANGE_LOWER && s.name !== STAT_BAND_LOWER).map(s => s.name);
+        })();
         let hasLegend = seriesNames.length > 1;
         if (Array.isArray(opt.legend) && opt.legend.length > 0 && opt.legend[0].show === false) hasLegend = false;
         // 单系列 / 饼图 / 环形图 不显示图例（用户需求 6）—— 在这里再调一次以应对主图 normalize 后又被修改的情况
@@ -11393,7 +11535,20 @@ function generateChartEmbedCode(chartId) {
         // 双重保险：show:false + 清空 text/subtitle，让 ECharts 合并时彻底无标题渲染。
         opt.title = [{ show: false, text: '' }];
         delete opt.subtitle;
-        let seriesNames = (opt.series || []).filter(s => s && s.name !== HIST_RANGE_LOWER && s.name !== STAT_BAND_LOWER).map(s => s.name);
+        // bak123：主图已显式排好图例顺序时（如年份系列按年份降序、最新在最左，见 updateEChartsInstance
+        // isSub 分支的 legend.data 覆写），下载图/嵌入页沿用该顺序，而非按系列(柱)顺序重建——
+        // 否则下载图/嵌入页的图例顺序会与主图不一致（用户反馈"刷新后还是不对"的同类问题）。
+        // 兼容 legend 的对象/数组两种形态（主图缓存是对象，getOption() 多返回数组）。
+        let seriesNames = (function () {
+            let lg = opt.legend, data = null;
+            if (lg && !Array.isArray(lg) && Array.isArray(lg.data)) data = lg.data;
+            else if (Array.isArray(lg) && lg.length > 0 && Array.isArray(lg[0].data)) data = lg[0].data;
+            if (data) {
+                let names = data.map(d => (d && typeof d === 'object') ? d.name : d).filter(Boolean);
+                if (names.length > 1) return names;
+            }
+            return (opt.series || []).filter(s => s && s.name !== HIST_RANGE_LOWER && s.name !== STAT_BAND_LOWER).map(s => s.name);
+        })();
         let hasLegend = seriesNames.length > 1;
         if (Array.isArray(opt.legend) && opt.legend.length > 0 && opt.legend[0].show === false) hasLegend = false;
         // 主页面复用 normalizeLegendDisplay：单系列 / 饼图 / 环形图 不显示图例（用户需求 6）
@@ -12175,9 +12330,16 @@ function downloadChartPng(inZoom) {
     text: liveTitle, left: 'center', top: 20,
     textStyle: { fontSize: 30, fontWeight: 'bold', color: '#110303', fontFamily: EMBED_DL_FONT }
   }];
-  let lgData = (Array.isArray(opt.legend) && opt.legend.length > 0 && Array.isArray(opt.legend[0].data))
-      ? opt.legend[0].data.map(d => (d && typeof d === 'object') ? d.name : d).filter(Boolean)
-      : null;
+  // bak123：兼容 legend 的对象/数组两种形态（主图缓存是对象，getOption() 多返回数组），
+  // 优先沿用主图已排好的图例顺序（如年份系列按年份降序、最新在最左）
+  let lgData = (function () {
+    let lg = opt.legend, data = null;
+    if (lg && !Array.isArray(lg) && Array.isArray(lg.data)) data = lg.data;
+    else if (Array.isArray(lg) && lg.length > 0 && Array.isArray(lg[0].data)) data = lg[0].data;
+    if (!data) return null;
+    let names = data.map(d => (d && typeof d === 'object') ? d.name : d).filter(Boolean);
+    return names.length > 0 ? names : null;
+  })();
   let seriesNames = lgData || (opt.series || []).filter(s => s && s.name).map(s => s.name);
   normalizeLegendDisplay(opt);
   let hasLegend = !!(opt.legend && Array.isArray(opt.legend) && opt.legend.length > 0 && opt.legend.some(lg => lg && lg.show !== false));
