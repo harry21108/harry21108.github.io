@@ -11000,8 +11000,35 @@ function applyChartAnalyticsI18N() {
         // 统一左对齐基准：图例 / 来源 左侧 与 Y 轴刻度最左端（即 Y 轴线）保持同一垂线。
         // grid.left=48（紧凑布局，跟主图/放大弹层/嵌入页一致 — 用户反馈 image3），左右对称；不要让图表看起来扁长
         let chartLeftEdge = 48;
+        // bak125：横向条形图（含百分比横向）按最长类别标签反推左侧留白，公式与主图 yLabelPad /
+        // 嵌入页 embedGridLeft 一致（90~220）——之前固定 48 会把 "Inner Mongolia" / "黑龙江"
+        // 这类长标签从左侧直接裁掉（用户截图反馈复制出的图显示 "ongolia"/"ngdong"）。
+        // 轴字号 10，估算系数按主图 12px 口径等比（中文≈1.1×字号、英文≈0.7×字号）。
+        let dlHorizCats = [];
+        if (config.type.includes('horizontal') || config.type.startsWith('percent-bar-horizontal')) {
+            (Array.isArray(opt.yAxis) ? opt.yAxis : []).forEach(ya => {
+                if (ya && ya.type === 'category' && Array.isArray(ya.data) && ya.data.length) dlHorizCats = ya.data;
+            });
+            let maxLabelPx = 0;
+            dlHorizCats.forEach(lbl => {
+                let s = String(lbl == null ? '' : lbl), w = 0;
+                for (let ch of s) w += /[\u4e00-\u9fa5\uff00-\uffef]/.test(ch) ? 11 : 7;
+                if (w > maxLabelPx) maxLabelPx = w;
+            });
+            chartLeftEdge = Math.max(90, Math.min(220, maxLabelPx + 24));
+        }
         // 次轴单位名较长时（dlY2UnitNeed 由上面的 yAxis 循环算出）按需加宽，确保单位完整显示
         let chartRightEdge = Math.max(48, dlY2UnitNeed);
+        // bak125：超过 220 的极长类别名用省略号截断（与主图横向 yAxis axisLabel 同款
+        // width/truncate/ellipsis），避免 ECharts 默认把标签从左侧裁掉。此处位于 yAxis 字号
+        // 统一设置之后，用 Object.assign 保留已设的 fontSize/color/hideOverlap。
+        if (dlHorizCats.length) {
+            (Array.isArray(opt.yAxis) ? opt.yAxis : []).forEach(ya => {
+                if (ya && ya.type === 'category') {
+                    ya.axisLabel = Object.assign({}, ya.axisLabel || {}, { width: Math.max(40, chartLeftEdge - 24), overflow: 'truncate', ellipsis: '…', interval: 0 });
+                }
+            });
+        }
         let legendWidth = w - chartLeftEdge - chartRightEdge;
         let estimateItemWidth = (nm) => {
             let s = String(nm === null || nm === undefined ? '' : nm);
@@ -12397,6 +12424,35 @@ function downloadChartPng(inZoom) {
         let legendFontSize = 24;
         let chartLeftEdge = 96;
         let chartRightEdge = 96;
+        // bak125：嵌入页 option 的 grid.left 已由 generateChartEmbedCode 按最长类别标签反推
+        // （横向条形图 90~220，防 "Inner Mongolia" 被裁）。这里若固定 96 会把它覆盖掉，
+        // 导致嵌入页内下载 PNG 时左侧标签重新被裁——opt.grid[0].left 更大时沿用之。
+        try {
+            let g0 = (Array.isArray(opt.grid) && opt.grid[0]) ? opt.grid[0] : (opt.grid || null);
+            if (g0 && typeof g0.left === 'number' && g0.left > chartLeftEdge) chartLeftEdge = g0.left;
+        } catch (e) {}
+        // bak125：横向条形图输出画布是 1200×720，轴字号 18（约为嵌入页 14 / 主图 12 的 1.3~1.5×），
+        // 左侧留白与 truncate 宽度必须按同一字号口径重算——否则嵌入页 option 里 12px 口径的
+        // axisLabel.width（如 91）在 18px 下只放得下 "Inner Mon..."（用户截图同类问题）。
+        // 取「沿用值」与「18px 重算值」的较大者，保证两种入口都不截断。
+        try {
+            let dlPngCats = [];
+            (Array.isArray(opt.yAxis) ? opt.yAxis : []).forEach(ya => { if (ya && ya.type === 'category' && Array.isArray(ya.data) && ya.data.length) dlPngCats = ya.data; });
+            if (dlPngCats.length) {
+                let maxLabelPx = 0;
+                dlPngCats.forEach(lbl => {
+                    let s = String(lbl == null ? '' : lbl), w = 0;
+                    for (let ch of s) w += /[\u4e00-\u9fa5\uff00-\uffef]/.test(ch) ? 18 : 11;
+                    if (w > maxLabelPx) maxLabelPx = w;
+                });
+                chartLeftEdge = Math.max(chartLeftEdge, Math.min(300, maxLabelPx + 28));
+                (Array.isArray(opt.yAxis) ? opt.yAxis : []).forEach(ya => {
+                    if (ya && ya.type === 'category') {
+                        ya.axisLabel = Object.assign({}, ya.axisLabel || {}, { width: Math.max(60, chartLeftEdge - 28), overflow: 'truncate', ellipsis: '…', interval: 0 });
+                    }
+                });
+            }
+        } catch (e) {}
         if (Array.isArray(opt.yAxis) && opt.yAxis.length > 1 && opt.yAxis[1] && opt.yAxis[1].name) {
           chartRightEdge = Math.max(chartRightEdge, 24 + measureTextPx(opt.yAxis[1].name, 18));
         }
@@ -12568,7 +12624,7 @@ function downloadChartPng(inZoom) {
         let png = canvas.toDataURL('image/png');
         let a = document.createElement('a');
         a.href = png;
-        a.download = (typeof EMBED_TITLE !== 'undefined' ? EMBED_TITLE : 'chart') + '_' + getDataFileSuffix() + '.png';
+        a.download = (typeof EMBED_TITLE !== 'undefined' ? EMBED_TITLE : 'chart') + '_' + (typeof getDataFileSuffix === 'function' ? getDataFileSuffix() : 'chart') + '.png';
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         cleanup();
       };
@@ -12600,7 +12656,7 @@ function downloadChartPng(inZoom) {
         let png = canvas.toDataURL('image/png');
         let a = document.createElement('a');
         a.href = png;
-        a.download = (typeof EMBED_TITLE !== 'undefined' ? EMBED_TITLE : 'chart') + '_' + getDataFileSuffix() + '.png';
+        a.download = (typeof EMBED_TITLE !== 'undefined' ? EMBED_TITLE : 'chart') + '_' + (typeof getDataFileSuffix === 'function' ? getDataFileSuffix() : 'chart') + '.png';
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         cleanup();
       };
