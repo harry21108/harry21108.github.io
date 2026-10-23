@@ -2256,6 +2256,21 @@
     // 只有 X 轴是时间字段时才有意义（维度做 X 轴时没有"前一期"的概念）
     const RATE_METRIC_SEP = '::rate::';
     function makeRateMetricValue(field, rateType) { return field + RATE_METRIC_SEP + rateType; }
+    // 第三十五轮扩展：除"自动计算的变化率"(::rate::) 外，新增"自动计算的增减量"(::diff::)，
+    // 即 当期 − 前一期 的绝对变化（单位沿用原字段单位，如 万吨 / Mt），而非百分比。
+    const DIFF_METRIC_SEP = '::diff::';
+    function makeDiffMetricValue(field, rateType) { return field + DIFF_METRIC_SEP + rateType; }
+    // 统一解析两种"自动计算"虚拟指标：变化率(::rate::) 与 增减量(::diff::)
+    function parseVirtualMetricValue(v) {
+        let s = String(v == null ? '' : v);
+        let i = s.indexOf(RATE_METRIC_SEP);
+        if (i >= 0) return { field: s.slice(0, i), rateType: s.slice(i + RATE_METRIC_SEP.length), kind: 'rate' };
+        let j = s.indexOf(DIFF_METRIC_SEP);
+        if (j >= 0) return { field: s.slice(0, j), rateType: s.slice(j + DIFF_METRIC_SEP.length), kind: 'diff' };
+        return null;
+    }
+    const DIFF_PERIOD_LABEL = { yoy: '同比增减量', mom: '月环比增减量', wow: '周环比增减量', dod: '日环比增减量' };
+    const DIFF_PERIOD_LABEL_EN = { yoy: 'YoY Change', mom: 'MoM Change', wow: 'WoW Change', dod: 'DoD Change' };
     function parseRateMetricValue(v) {
         let s = String(v == null ? '' : v);
         let i = s.indexOf(RATE_METRIC_SEP);
@@ -2282,7 +2297,7 @@
             let avail = availableRateTypes(rows, dateColumn);
             if (!avail.length) return '';
             let isEn = window.currentLang === 'en';
-            let out = [];
+            let rateOpts = [], diffOpts = [];
             numericColumns.forEach(c => {
                 // 2026-10-15：日期列被 analyzeColumnTypes 归入数值列（日期序号），但它是对数维度，
                 // "日期·MoM%/YoY%"没有任何业务含义 —— 选项里剔除（bak104 图例自定义名轮发现）。
@@ -2294,11 +2309,17 @@
                 avail.forEach(rt => {
                     if (isCumField && !isRateSrc && rt !== 'yoy') return;
                     // 第四十二轮：率列差分的单位是百分点/pp，选项后缀不再是 %
-                    let label = getMappedValue(c, window.currentLang) + ' · ' + (isEn ? RATE_PERIOD_LABEL_EN[rt] : RATE_PERIOD_LABEL[rt]) + (isRateSrc ? rateDiffSuffix(isEn) : '%');
-                    out.push(`<option value="${makeRateMetricValue(c, rt)}">${label}</option>`);
+                    let labelRate = getMappedValue(c, window.currentLang) + ' · ' + (isEn ? RATE_PERIOD_LABEL_EN[rt] : RATE_PERIOD_LABEL[rt]) + (isRateSrc ? rateDiffSuffix(isEn) : '%');
+                    rateOpts.push(`<option value="${makeRateMetricValue(c, rt)}">${labelRate}</option>`);
+                    // 增减量（绝对变化 = 当期 − 前一期）：单位沿用原字段单位，不写 %
+                    let labelDiff = getMappedValue(c, window.currentLang) + ' · ' + (isEn ? DIFF_PERIOD_LABEL_EN[rt] : DIFF_PERIOD_LABEL[rt]);
+                    diffOpts.push(`<option value="${makeDiffMetricValue(c, rt)}">${labelDiff}</option>`);
                 });
             });
-            return out.length ? `<option value="__rate_group__" disabled>── 自动计算的变化率 ──</option>` + out.join('') : '';
+            let parts = [];
+            if (rateOpts.length) parts.push(`<option value="__rate_group__" disabled>── 自动计算的变化率 ──</option>` + rateOpts.join(''));
+            if (diffOpts.length) parts.push(`<option value="__diff_group__" disabled>── 自动计算的增减量 ──</option>` + diffOpts.join(''));
+            return parts.join('');
         } catch (e) { return ''; }
     }
 
@@ -5317,6 +5338,148 @@
         } catch (e) { return null; }
     }
 
+    /**
+     * 自动计算的"增减量"（绝对变化 = 当期聚合值 − 前一期聚合值）。
+     * 与 calcAutoPeriodRate 同属"自动计算"虚拟指标，但返回差值而非百分比，
+     * 单位沿用原字段单位（如 万吨 / Mt）。找不到前一期（数据里没有那个期次）时返回 null。
+     */
+    function calcAutoPeriodChange(opts) {
+        try {
+            let rows = (opts && opts.rows) || [];
+            let xField = opts && opts.xField;
+            let xValue = opts && opts.xValue;
+            let g = opts && opts.granularity;
+            if (!rows.length || !xField || xValue === undefined || xValue === null) return null;
+            if (!g) g = getDateGranularity(rows, xField);
+            if (!g) return null;
+            let curC = parsePeriodKey(xValue, xField);
+            if (!curC) return null;
+            let prevC = shiftPeriod(curC, g, opts.rateType || 'yoy');
+            if (!prevC) return null;
+            let prevOrd = periodOrdinal(prevC, g);
+            if (prevOrd === null) return null;
+            let ridx = getRateIndex(rows, xField, g);
+            if (!ridx) return null;
+            let prevKey = ridx.ordMap[prevOrd];
+            // 日/周/月环比允许"最近的一期"（数据缺当天时退到最近一次观测）；同比必须严格同期
+            if (prevKey === undefined && (opts.rateType === 'dod' || opts.rateType === 'wow' || opts.rateType === 'mom')) {
+                let lo = 0, hi = ridx.ords.length - 1, best = -1;
+                while (lo <= hi) {
+                    let mid = (lo + hi) >> 1;
+                    if (ridx.ords[mid] <= prevOrd) { best = mid; lo = mid + 1; } else hi = mid - 1;
+                }
+                if (best >= 0) prevKey = ridx.ordMap[ridx.ords[best]];
+            }
+            if (prevKey === undefined) return null;
+            let curRows = ridx.groups[String(xValue)] || [];
+            let prevRows = ridx.groups[prevKey] || [];
+            // 合计行会与明细重复计数：除非明确要求合计，否则一律剔除；
+            // 但如果数据里只有合计行（没有明细），则保留合计行，避免算不出变化量。
+            if (!(opts && opts.keepTotal)) {
+                try {
+                    let curRowsF = curRows.filter(d => !isTotalRow(d));
+                    let prevRowsF = prevRows.filter(d => !isTotalRow(d));
+                    if (curRowsF.length) curRows = curRowsF;
+                    if (prevRowsF.length) prevRows = prevRowsF;
+                } catch (e) {}
+            }
+            if (!curRows.length || !prevRows.length) return null;
+            let curVal = calcValueForField(curRows, opts.valueField, opts.agg || 'sum', opts.calcOpts || {});
+            let prevVal = calcValueForField(prevRows, opts.valueField, opts.agg || 'sum', opts.calcOpts || {});
+            if (curVal === null || prevVal === null || isNaN(curVal) || isNaN(prevVal)) return null;
+            return curVal - prevVal;
+        } catch (e) { return null; }
+    }
+
+    /**
+     * bak128：按"类别 X 轴 + 时间筛选"算当期 vs 前一期的变化率 / 增减量。
+     * 典型用法：X 轴=省份、Y=发电量·月环比增减量、时间范围=最新一期
+     *   → 每根柱子 = 该省当月发电量 − 上月发电量（上月值从忽略时间筛选的全量数据里取）。
+     * 与 calcAutoPeriodRate/Change 的区别：那两者要求 X 轴本身就是日期；这里 X 轴是类别，
+     * "当期/前期"由 dateColumn + 时间范围（timeScope / 时间维度局部筛选）决定。
+     * 返回 { byX: {X值: 数值|null}, prevKeys: [前期期次...] }；取不到前期时返回 null。
+     */
+    function calcCategoryPeriodValue(curRows, prevRows, valueField, agg, kind, calcOpts) {
+        let curVal = calcValueForField(curRows, valueField, agg || 'sum', calcOpts || {});
+        let prevVal = calcValueForField(prevRows, valueField, agg || 'sum', calcOpts || {});
+        if (curVal === null || prevVal === null || isNaN(curVal) || isNaN(prevVal)) return null;
+        if (kind === 'diff') return curVal - prevVal;
+        if (prevVal === 0) return null;
+        return (curVal - prevVal) / prevVal * 100;
+    }
+
+    function calcCategoryPeriodMetrics(o) {
+        try {
+            let scopedRows = (o && o.scopedRows) || [];
+            let fullRows = (o && o.fullRows) || [];
+            let dateCol = o && o.dateCol, g = o && o.granularity, xField = o && o.xField;
+            if (!scopedRows.length || !fullRows.length || !dateCol || !g || !xField) return null;
+            // 当期实际出现的期次（按数据里的日期字符串去重）
+            let curDateStrs = [], seenD = Object.create(null);
+            scopedRows.forEach(d => {
+                let s = String(d[dateCol] || '');
+                if (s && !seenD[s]) { seenD[s] = 1; curDateStrs.push(s); }
+            });
+            if (!curDateStrs.length) return null;
+            // 全量数据：期序号 → 日期字符串（前期只能从"没被时间筛选砍掉"的数据里找）
+            let ordMap = Object.create(null), ords = [];
+            fullRows.forEach(d => {
+                let s = String(d[dateCol] || '');
+                if (!s) return;
+                let c = parsePeriodKey(s, dateCol);
+                if (!c) return;
+                let ord = periodOrdinal(c, g);
+                if (ord === null || isNaN(ord)) return;
+                if (ordMap[ord] === undefined) ordMap[ord] = s;
+                ords.push(ord);
+            });
+            if (!ords.length) return null;
+            ords = Array.from(new Set(ords)).sort((a, b) => a - b);
+            // 当期各期次平移一期 → 前期期次（日/周/月环比允许缺期时退到最近的前一期，同比必须严格同期）
+            let wantKeys = Object.create(null);
+            curDateStrs.forEach(s => {
+                let c = parsePeriodKey(s, dateCol);
+                if (!c) return;
+                let pc = shiftPeriod(c, g, (o && o.rateType) || 'yoy');
+                if (!pc) return;
+                let tOrd = periodOrdinal(pc, g);
+                if (tOrd === null || isNaN(tOrd)) return;
+                let key = ordMap[tOrd];
+                if (key === undefined && ((o && o.rateType) === 'dod' || (o && o.rateType) === 'wow' || (o && o.rateType) === 'mom')) {
+                    let lo = 0, hi = ords.length - 1, best = -1;
+                    while (lo <= hi) {
+                        let mid = (lo + hi) >> 1;
+                        if (ords[mid] <= tOrd) { best = mid; lo = mid + 1; } else hi = mid - 1;
+                    }
+                    if (best >= 0) key = ordMap[ords[best]];
+                }
+                if (key !== undefined) wantKeys[key] = 1;
+            });
+            let wantList = Object.keys(wantKeys);
+            if (!wantList.length) return null;
+            // 前期行 / 当期行按 X 类别分组
+            let prevByX = Object.create(null), curByX = Object.create(null);
+            fullRows.forEach(d => {
+                let s = String(d[dateCol] || '');
+                if (!wantKeys[s]) return;
+                let k = getXValue(d, xField);
+                if (k === null || k === undefined || k === '') return;
+                (prevByX[k] || (prevByX[k] = [])).push(d);
+            });
+            if (!Object.keys(prevByX).length) return null;
+            scopedRows.forEach(d => {
+                let k = getXValue(d, xField);
+                if (k === null || k === undefined || k === '') return;
+                (curByX[k] || (curByX[k] = [])).push(d);
+            });
+            let byX = Object.create(null);
+            Object.keys(curByX).forEach(k => {
+                byX[k] = calcCategoryPeriodValue(curByX[k], prevByX[k] || [], o.valueField, o.agg, o.kind, o.calcOpts);
+            });
+            return { byX: byX, prevKeys: wantList };
+        } catch (e) { return null; }
+    }
+
     /** 解析率值单元格：兼容 12 / "12%" / 0.12 三种存法（返回数值与是否带 % 号） */
     function parseRateCellNumber(v) {
         if (v === null || v === undefined || v === '') return null;
@@ -6692,10 +6855,14 @@
         // 第三十七轮：Y 主度量也可以是"自动计算的变化率"虚拟指标（字段::rate::yoy）。
         // 聚合阶段仍按原始字段算，最后在 groupMap 上整体换算成变化率，
         // 这样移动平均、参考线、tooltip 等下游逻辑都自动跟着走。
-        let mainRateMetric = parseRateMetricValue(config.yField);
-        // 第四十二轮：Y 主度量为率列差分时，单位是百分点/pp 而不是 %
+        let mainRateMetric = parseVirtualMetricValue(config.yField);
+        let chartEmptyNotice = null;
+        // 第四十二轮：Y 主度量为率列差分时，单位是百分点/pp 而不是 %；
+        // 增减量(::diff::) 单位沿用原字段单位（如 万吨 / Mt），而不是 %
         let unitY1 = mainRateMetric
-            ? (isRateColumn(mainRateMetric.field) ? rateDiffUnit(isEn) : '%')
+            ? (mainRateMetric.kind === 'diff'
+                ? extractPureUnit(mainRateMetric.field, isEn)
+                : (isRateColumn(mainRateMetric.field) ? rateDiffUnit(isEn) : '%'))
             : extractPureUnit(config.yField, isEn);
         let unitY2 = extractPureUnit(config.yField2, isEn);
         // 支持局部筛选的 "分别展示" 模式：把 separate filter 当作额外的系列/堆叠维度
@@ -6913,6 +7080,30 @@
         } else {
             xDataKeys.sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
         }
+        // bak126：X 轴为文本维度（非时间、且维度表未配置序号列）时，按度量总值从大到小
+        // 排布，最大值在最左侧——与横向条形图「最大值在最上方」（见下方横向分支）口径一致
+        // （用户反馈截图：省份 X 轴希望按值降序，如 Inner Mongolia 排最左）。
+        // 时间维度、有序号列的维度表、饼图/环形/树图不参与（保持各自原顺序）；
+        // isSub（多系列）取该 X 下所有系列之和；平局时 sort 稳定，保持原字符串序。
+        let sortXKeysByValueDesc = function (keys) {
+            if (isTimeDimension(config.xField)) return keys;
+            if (sortInfo && Object.keys(xSortValues).length > 0) return keys;
+            let t = config.type;
+            if (t === 'pie' || t === 'treemap' || t === 'ring-pie') return keys;
+            return keys.slice().sort((a, b) => {
+                let totalA = 0, totalB = 0;
+                if (isSub) {
+                    totalA = Object.values(groupMap[a] || {}).reduce((s, v) => s + (v || 0), 0);
+                    totalB = Object.values(groupMap[b] || {}).reduce((s, v) => s + (v || 0), 0);
+                } else {
+                    totalA = groupMap[a] || 0;
+                    totalB = groupMap[b] || 0;
+                }
+                return totalB - totalA;
+            });
+        };
+        // 纵向图（柱/折/面积/组合）按值降序；横向条形图走下方专用升序分支（最大值在数组末尾=最上方）
+        if (!config.type.includes('horizontal')) xDataKeys = sortXKeysByValueDesc(xDataKeys);
         // 横向条形图：非时间维度按度量值升序排列（ECharts category Y 轴最后一个在顶部，故最大值放数组末尾）
         if (config.type.includes('horizontal') && !isTimeDimension(config.xField)) {
             xDataKeys.sort((a, b) => {
@@ -6966,9 +7157,46 @@
             yLabelPad = Math.max(90, Math.min(220, maxLabelPx + 24));
         }
 
-        // 比率类指标（同比/环比/累计同比...）：一律优先使用事实表原始值，绝不把百分比相加
+        // 自动计算类指标（变化率 / 增减量）：一律优先使用事实表原始值，绝不把百分比相加
         if (!isSub && mainRateMetric) {
             let gMain = getDateGranularity(scopedData, config.xField) || getDateGranularity(baseData, config.xField);
+            // bak128：X 轴是类别维度（省份/煤种…）但配了时间筛选（最新一期/某月/区间/累计，
+            // 或局部筛选里有时间维度）时，"当期 vs 前一期"依然可算 —— 用户场景：
+            // X=各省份、Y=月环比增减量、时间范围=最新一期 → 一眼看出各省份当月比上月增减多少。
+            // 做法：当期值取 scopedData（已按时间筛选），前期值从"忽略时间维度筛选"的全量数据里取。
+            let catCross = null;
+            if (!gMain && dateColumn && scopedData.length) {
+                let lfs = config.localFilters || [];
+                let timeScoped = (config.timeScope && config.timeScope !== 'all') || lfs.some(f => isTimeDimension(f.field));
+                if (timeScoped) {
+                    let nonDateFilters = lfs.filter(f => !isTimeDimension(f.field));
+                    let rBase = (nonDateFilters.length === lfs.length)
+                        ? baseData
+                        : (nonDateFilters.length === 0
+                            ? filteredData
+                            : filteredData.filter(d => checkLocalFilters(d, nonDateFilters, filteredData)));
+                    let gCat = getDateGranularity(rBase, dateColumn);
+                    if (gCat) {
+                        catCross = calcCategoryPeriodMetrics({
+                            scopedRows: scopedData, fullRows: rBase, dateCol: dateColumn, granularity: gCat,
+                            xField: config.xField, valueField: mainRateMetric.field, agg: config.agg || 'sum',
+                            rateType: mainRateMetric.rateType, kind: mainRateMetric.kind, calcOpts: calcOpts
+                        });
+                    }
+                }
+            }
+            if (!gMain && !catCross) {
+                // bak127：X 轴不是日期维度、又没有任何时间筛选时，变化率/增减量找不到"前一期"，
+                // 静默空白会让用户困惑 —— 直接给空数据并在图上提示根因与可行做法。
+                chartEmptyNotice = (isEn ? 'Auto-calculated ' : '自动计算的')
+                    + (mainRateMetric.kind === 'diff' ? (isEn ? 'change' : '增减量') : (isEn ? 'rate' : '变化率'))
+                    + (isEn
+                        ? ' needs the X-axis to be a date field, or a time scope (Latest period / a specific month) to compare categories (current 『'
+                        : '需要 X 轴为日期字段；也可将时间范围设为「最新一期 / 具体某月」后按类别对比（当前『')
+                    + getMappedValue(config.xField, window.currentLang)
+                    + (isEn ? '』 is not a date).' : '』不是日期）。');
+                xDataKeys = []; xData = []; xDataLabels = [];
+            } else {
             // 虚拟指标在聚合阶段取不到原始值（行里没有这个字段），groupMap 会是空的，
             // X 轴 key 列表也会跟着空 —— 这里直接从数据里取 X 轴的期次列表补上。
             if (!xDataKeys.length) {
@@ -6987,13 +7215,48 @@
                 xDataKeys = ks; xData = ks;
                 xDataLabels = canonicalizePeriodLabelsEn(xDataKeys.map(k => xDisplayMap[k] || k), config.xField);
             }
-            xDataKeys.forEach(x => {
-                groupMap[x] = calcAutoPeriodRate({
-                    rows: scopedData, xField: config.xField, xValue: x,
-                    valueField: mainRateMetric.field, agg: config.agg || 'sum', rateType: mainRateMetric.rateType,
-                    calcOpts: calcOpts, granularity: gMain, keepTotal: explicitlyRequestedTotal
+            if (catCross) {
+                // bak128：类别 X 轴 + 时间筛选 —— 逐类别取当期/前期值直接算
+                xDataKeys.forEach(x => {
+                    let v = (catCross.byX[x] === undefined) ? null : catCross.byX[x];
+                    if (v !== null && mainRateMetric.kind === 'diff' && isEn) v /= enUnitDivisor(mainRateMetric.field);
+                    groupMap[x] = v;
                 });
+            } else {
+            xDataKeys.forEach(x => {
+                if (mainRateMetric.kind === 'diff') {
+                    let v = calcAutoPeriodChange({
+                        rows: scopedData, xField: config.xField, xValue: x,
+                        valueField: mainRateMetric.field, agg: config.agg || 'sum', rateType: mainRateMetric.rateType,
+                        calcOpts: calcOpts, granularity: gMain, keepTotal: explicitlyRequestedTotal
+                    });
+                    if (v !== null && isEn) v /= enUnitDivisor(mainRateMetric.field);
+                    groupMap[x] = v;
+                } else {
+                    groupMap[x] = calcAutoPeriodRate({
+                        rows: scopedData, xField: config.xField, xValue: x,
+                        valueField: mainRateMetric.field, agg: config.agg || 'sum', rateType: mainRateMetric.rateType,
+                        calcOpts: calcOpts, granularity: gMain, keepTotal: explicitlyRequestedTotal
+                    });
+                }
             });
+            }
+            // bak126：虚拟指标分支重建了 X 键列表（上面 6987 行附近），文本维度同样按值降序
+            // 重排一次（此时 groupMap 已填好 rate/diff 值）；时间维度/序号列维度 sortXKeysByValueDesc 原样返回
+            // bak128：横向条形图必须保持升序（ECharts 类目 Y 轴最后一个在顶部 → 最大值要在数组末尾），
+            // 否则 virtual metric 路径的降序重排会把最大值翻到底部（bak126 纵向口径被误用到横向）
+            if (config.type.includes('horizontal') && !isTimeDimension(config.xField)) {
+                xDataKeys.sort((a, b) => {
+                    let totalA = 0, totalB = 0;
+                    totalA = groupMap[a] || 0; totalB = groupMap[b] || 0;
+                    return totalA - totalB;
+                });
+            } else {
+                xDataKeys = sortXKeysByValueDesc(xDataKeys);
+            }
+            xData = xDataKeys;
+            xDataLabels = canonicalizePeriodLabelsEn(xDataKeys.map(k => xDisplayMap[k] || k), config.xField);
+            }
         } else if (!isSub && isRateColumn(config.yField)) {
             let rateType = /环比|mom/i.test(config.yField) ? 'mom' : 'yoy';
             let isCumulative = config.timeScope === 'ytd' || /累计/.test(config.yField);
@@ -7288,7 +7551,9 @@
                 option.xAxis = { type: 'value', name: isPercent ? '%' : unitY1, min: niceMin, max: isPercent ? 100 : undefined, axisLabel: axisLabelConfig };
                 option.yAxis = { type: 'category', data: xDataLabels, axisLabel: { width: yLabelPad - 24, overflow: 'truncate', ellipsis: '…', interval: 0 } };
             } else {
-                option.xAxis = { type: 'category', data: xDataLabels };
+                // bak129：多系列纵向图的类别 X 轴同样保末端标签（interval:'auto' 会丢最右侧类别名）；
+                // 颜色无需显式设——本分支未覆盖 axisLine，标签回退到默认 #6E7079，与 Y 轴一致。
+                option.xAxis = { type: 'category', data: xDataLabels, axisLabel: { showMinLabel: true, showMaxLabel: true } };
                 option.yAxis = { type: 'value', name: isPercent ? '%' : unitY1, min: niceMin, max: isPercent ? 100 : undefined, axisLabel: axisLabelConfig };
             }
             let histRangeSub = buildHistRangeSeries(config, xData, { isEn: isEn, explicitlyRequestedTotal: explicitlyRequestedTotal, isTopN: isTopN });
@@ -7378,14 +7643,27 @@
                 option.xAxis = { type: 'value', name: isPercent ? '%' : unitY1, min: niceMin, max: isPercent ? 100 : undefined, splitLine: { lineStyle: { type: 'dashed' } }, axisLabel: axisLabelConfig };
                 option.yAxis = { type: 'category', data: xDataLabels, axisLabel: { width: yLabelPad - 24, overflow: 'truncate', ellipsis: '…', interval: 0 } };
             } else {
-                option.xAxis = { type: 'category', data: xDataLabels, axisLine: { onZero: true, onZeroAxisIndex: 0, lineStyle: { color: '#D1D5DB' } } };
-                option.yAxis = [{ type: 'value', name: isPercent ? '%' : unitY1, min: niceMin, max: isPercent ? 100 : undefined, splitLine: { lineStyle: { type: 'dashed' } }, axisLabel: axisLabelConfig, alignTicks: true }];
+                // bak129：① 标签颜色显式设为 #6E7079 —— ECharts 轴标签颜色回退链是
+                // axisLabel.color → axisLine.lineStyle.color，本行把轴线刻意调浅（#D1D5DB）会连带
+                // 把标签拖成浅灰（用户截图：X 轴省份名明显比 Y 轴数值浅）。② showMinLabel/showMaxLabel：
+                // 类别过多时 interval:'auto' 只保留互不重叠的标签，最右侧类别名必然被丢
+                // （用户截图：20 省只显示到倒数第二个）；ECharts 边界防重叠机制会在冲突时删掉
+                // 倒数第二个、保留最后一个，确保末端类别名可见（showMinLabel 同理保最左）。
+                option.xAxis = { type: 'category', data: xDataLabels, axisLine: { onZero: true, onZeroAxisIndex: 0, lineStyle: { color: '#D1D5DB' } }, axisLabel: { color: '#6E7079', showMinLabel: true, showMaxLabel: true } };
+            // bak128：Y 轴不设 alignTicks —— ECharts 的刻度对齐会用「另一轴的刻度个数」反推本轴
+            // 范围（bottom = niceTop − interval×另一轴刻度数），与本轴数据无关，任一方数据稍深就会被裁
+            // （用户截图：组合图次轴 -18.10 被钉在 -15 的轴底裁掉）。单轴图本就无副作用（无对齐对象），
+            // 组合图两轴各自按自身数据自适应，代价仅是两轴刻度不再对齐。
+            option.yAxis = [{ type: 'value', name: isPercent ? '%' : unitY1, min: niceMin, max: isPercent ? 100 : undefined, splitLine: { lineStyle: { type: 'dashed' } }, axisLabel: axisLabelConfig }];
             }
 
             // 折线图保留空值连线；面积图/柱状图在空值处断开，避免显示为 0
             let connectNulls = (config.type === 'line');
             let mainName = mainRateMetric
-                ? (getMappedValue(mainRateMetric.field, window.currentLang) + ' · ' + (isEn ? RATE_PERIOD_LABEL_EN[mainRateMetric.rateType] : RATE_PERIOD_LABEL[mainRateMetric.rateType]) + (isRateColumn(mainRateMetric.field) ? rateDiffSuffix(isEn) : '%'))
+                ? (getMappedValue(mainRateMetric.field, window.currentLang) + ' · ' + (isEn
+                        ? (mainRateMetric.kind === 'diff' ? DIFF_PERIOD_LABEL_EN[mainRateMetric.rateType] : RATE_PERIOD_LABEL_EN[mainRateMetric.rateType])
+                        : (mainRateMetric.kind === 'diff' ? DIFF_PERIOD_LABEL[mainRateMetric.rateType] : RATE_PERIOD_LABEL[mainRateMetric.rateType]))
+                    + (mainRateMetric.kind === 'diff' ? '' : (isRateColumn(mainRateMetric.field) ? rateDiffSuffix(isEn) : '%')))
                 : getMappedValue(config.yField, window.currentLang);
             // 2026-10-15：主度量自定义显示名优先（有系列细分时图例名来自细分取值，此覆盖不参与）
             mainName = getMetricDisplayNameOverride(config, 'y') || mainName;
@@ -7427,28 +7705,69 @@
                 seriesList.push({ name: maName, type: 'line', data: maData, lineStyle: { type: 'dotted', width: 2 }, symbol: 'none', showSymbol: false, symbolSize: 0, connectNulls: false, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
             }
 
-            if(config.type === 'combo' && parseRateMetricValue(config.yField2)) {
-                // 第三十五轮：Y2 = 自动计算的变化率（虚拟指标，如"产量 · 同比%"）——
-                // 数据里没有现成同环比列时，按 X 轴（时间）粒度逐点推算前一期再算变化率
-                let rm = parseRateMetricValue(config.yField2);
+            if(config.type === 'combo' && parseVirtualMetricValue(config.yField2)) {
+                // 第三十五轮：Y2 = 自动计算的变化率 / 增减量（虚拟指标）——
+                // 数据里没有现成同环比列时，按 X 轴（时间）粒度逐点推算前一期再算变化率/增减量
+                let rm = parseVirtualMetricValue(config.yField2);
                 let g = getDateGranularity(scopedData, config.xField) || getDateGranularity(baseData, config.xField);
-                let rateLabel = isEn ? RATE_PERIOD_LABEL_EN[rm.rateType] : RATE_PERIOD_LABEL[rm.rateType];
-                let finalY2Data = xData.map(x => calcAutoPeriodRate({
-                    rows: scopedData, xField: config.xField, xValue: x,
-                    valueField: rm.field, agg: config.agg || 'sum', rateType: rm.rateType,
-                    calcOpts: calcOpts, granularity: g, keepTotal: explicitlyRequestedTotal
-                }));
-                // 第四十二轮：Y2 为率列差分时单位/后缀用百分点/pp
-                let y2IsDiff = isRateColumn(rm.field);
-                let y2UnitTxt = y2IsDiff ? rateDiffUnit(isEn) : '%';
-                let y2Name = getMappedValue(rm.field, window.currentLang) + ' · ' + rateLabel + (y2IsDiff ? rateDiffSuffix(isEn) : '%');
+                // bak128：X 轴是类别维度（省份/煤种…）+ 时间筛选时，Y2 同样按"各类别当期 vs 前一期"算
+                let catCrossY2 = null;
+                if (!g && dateColumn && scopedData.length) {
+                    let lfs2 = config.localFilters || [];
+                    let timeScoped2 = (config.timeScope && config.timeScope !== 'all') || lfs2.some(f => isTimeDimension(f.field));
+                    if (timeScoped2) {
+                        let nonDateFilters2 = lfs2.filter(f => !isTimeDimension(f.field));
+                        let rBase2 = (nonDateFilters2.length === lfs2.length)
+                            ? baseData
+                            : (nonDateFilters2.length === 0
+                                ? filteredData
+                                : filteredData.filter(d => checkLocalFilters(d, nonDateFilters2, filteredData)));
+                        let gCat2 = getDateGranularity(rBase2, dateColumn);
+                        if (gCat2) {
+                            catCrossY2 = calcCategoryPeriodMetrics({
+                                scopedRows: scopedData, fullRows: rBase2, dateCol: dateColumn, granularity: gCat2,
+                                xField: config.xField, valueField: rm.field, agg: config.agg || 'sum',
+                                rateType: rm.rateType, kind: rm.kind, calcOpts: calcOpts
+                            });
+                        }
+                    }
+                }
+                let rateLabel = isEn ? (rm.kind === 'diff' ? DIFF_PERIOD_LABEL_EN[rm.rateType] : RATE_PERIOD_LABEL_EN[rm.rateType]) : (rm.kind === 'diff' ? DIFF_PERIOD_LABEL[rm.rateType] : RATE_PERIOD_LABEL[rm.rateType]);
+                let finalY2Data = xData.map(x => {
+                    if (catCrossY2) {
+                        let cv = (catCrossY2.byX[x] === undefined) ? null : catCrossY2.byX[x];
+                        if (cv !== null && rm.kind === 'diff' && isEn) cv /= enUnitDivisor(rm.field);
+                        return cv;
+                    }
+                    if (rm.kind === 'diff') {
+                        let v = calcAutoPeriodChange({
+                            rows: scopedData, xField: config.xField, xValue: x,
+                            valueField: rm.field, agg: config.agg || 'sum', rateType: rm.rateType,
+                            calcOpts: calcOpts, granularity: g, keepTotal: explicitlyRequestedTotal
+                        });
+                        if (v !== null && isEn) v /= enUnitDivisor(rm.field);
+                        return v;
+                    }
+                    return calcAutoPeriodRate({
+                        rows: scopedData, xField: config.xField, xValue: x,
+                        valueField: rm.field, agg: config.agg || 'sum', rateType: rm.rateType,
+                        calcOpts: calcOpts, granularity: g, keepTotal: explicitlyRequestedTotal
+                    });
+                });
+                // 第四十二轮：Y2 为率列差分时单位/后缀用百分点/pp；增减量单位沿用原字段单位
+                let y2IsDiffCol = isRateColumn(rm.field);
+                let y2UnitTxt = rm.kind === 'diff' ? extractPureUnit(rm.field, isEn) : (y2IsDiffCol ? rateDiffUnit(isEn) : '%');
+                let y2Name = getMappedValue(rm.field, window.currentLang) + ' · ' + rateLabel + (rm.kind === 'diff' ? '' : (y2IsDiffCol ? rateDiffSuffix(isEn) : '%'));
                 // 2026-10-15：次度量（自动计算变化率）自定义显示名优先
                 y2Name = getMetricDisplayNameOverride(config, 'y2') || y2Name;
                 let niceMin2r = computeNiceMin(finalY2Data);
+                // bak128：Y2 轴不能设 alignTicks —— ECharts 的刻度对齐会用「主轴刻度个数」
+                // 反推次轴范围（bottom = niceTop − interval×主轴刻度数），与次轴自身数据无关：
+                // 主轴 [700,1800]（12 个刻度）时次轴底部被钉在 -15，而数据最低 -18.10 → 折线被裁
+                // （用户截图：风电同比最新月 -18.10 低于轴底 -15）。去掉后次轴按自身数据自适应。
                 option.yAxis.push({
                     type: 'value', name: y2UnitTxt, min: niceMin2r, splitLine: { show: false },
-                    axisLabel: Object.assign({}, axisLabelConfig, { formatter: (v) => (v === null || v === undefined || isNaN(v)) ? '' : (Number(v).toFixed(1) + y2UnitTxt) }),
-                    alignTicks: true
+                    axisLabel: Object.assign({}, axisLabelConfig, { formatter: (v) => (v === null || v === undefined || isNaN(v)) ? '' : (Number(v).toFixed(1) + y2UnitTxt) })
                 });
                 seriesList.push({ name: y2Name, type: 'line', yAxisIndex: 1, data: finalY2Data, connectNulls: false, symbol: 'none', showSymbol: false, symbolSize: 0, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
             } else if(config.type === 'combo') {
@@ -7486,7 +7805,9 @@
                     return null;
                 });
                 let niceMin2 = computeNiceMin(finalY2Data);
-                option.yAxis.push({ type: 'value', name: unitY2, min: niceMin2, splitLine: { show: false }, axisLabel: axisLabelConfigY2, alignTicks: true });
+                // bak128：Y2 轴不设 alignTicks（原因同上方虚拟指标分支：ECharts 会用主轴刻度个数
+                // 反推次轴范围，把次轴数据裁掉）——次轴必须按自身数据自适应。
+                option.yAxis.push({ type: 'value', name: unitY2, min: niceMin2, splitLine: { show: false }, axisLabel: axisLabelConfigY2 });
                 // 2026-10-15：次度量（普通度量或原始比率列）自定义显示名优先
                 let y2SeriesNamePlain = getMetricDisplayNameOverride(config, 'y2') || getMappedValue(config.yField2, window.currentLang);
                 y2SeriesRef.name = y2SeriesNamePlain;
@@ -7512,21 +7833,41 @@
             if (!config.type.startsWith('percent-')) {
                 let axisIsHorizontal = config.type.includes('horizontal');
                 let allSeries0 = Array.isArray(option.series) ? option.series : [];
-                // 第六十一轮：存在堆叠系列时整块跳过 —— 堆叠总量进入 vals0 会把轴最小值抬到
+                // bak128：区间带（历史同期/±1σ）用「隐形下界 + 差值带」两段式堆叠实现，
+                // 两个系列都带技术性 stack —— 不能算进 hasStackSeries，否则整块被跳过，
+                // 带子下界永远不进 vals0，Y 轴最小值不考虑带子 → 带子下半截被裁掉
+                // （用户截图：局部筛两年、σ带按 5 年历史算，带子区间显示不全）。
+                let bandStackIds = new Set();
+                allSeries0.forEach(s => {
+                    if (s && (s.name === HIST_RANGE_LOWER || s.name === STAT_BAND_LOWER) && s.stack) bandStackIds.add(s.stack);
+                });
+                let isBandPart = s => !!s && ((s.name === HIST_RANGE_LOWER || s.name === STAT_BAND_LOWER) || (s.stack && bandStackIds.has(s.stack)));
+                // 第六十一轮：存在真实堆叠系列时整块跳过 —— 堆叠总量进入 vals0 会把轴最小值抬到
                 // 数千/数万级，堆积柱底部被截断；堆积图 Y 轴必须保持 0 基线
-                let hasStackSeries = allSeries0.some(s => s && s.stack);
+                let hasStackSeries = allSeries0.some(s => s && s.stack && !isBandPart(s));
                 let stackedSums = {};
                 let vals0 = [];
                 if (!hasStackSeries) allSeries0.forEach(s => {
                     if (!s || (s.yAxisIndex || 0) !== 0 || !Array.isArray(s.data)) return;
                     let isBandLower = (s.name === HIST_RANGE_LOWER || s.name === STAT_BAND_LOWER);
+                    if (isBandPart(s)) {
+                        // 区间带（历史同期/±1σ）两段式堆叠：隐形下界就是带子底边，计入 vals0；
+                        // 差值带是"厚度"不是位置，必须整段跳过 —— 否则厚度值（如 134.7）会被当成
+                        // 位置参与最小值计算，把轴底压到 0 基线（bak128 首版即此 bug）。
+                        if (isBandLower) s.data.forEach(d => {
+                            let v = (d && typeof d === 'object') ? d.value : d;
+                            if (v === null || v === undefined || v === '') return;
+                            let n = Number(v);
+                            if (!isNaN(n)) vals0.push(n);
+                        });
+                        return;
+                    }
                     s.data.forEach((d, i) => {
                         let v = (d && typeof d === 'object') ? d.value : d;
                         if (v === null || v === undefined || v === '') return;
                         let n = Number(v);
                         if (isNaN(n)) return;
-                        // 区间带的下界系列本身不可见，但其数值就是带子的底边，直接计入
-                        if (isBandLower || !s.stack) vals0.push(n);
+                        if (!s.stack) vals0.push(n);
                         else {
                             if (!stackedSums[s.stack]) stackedSums[s.stack] = [];
                             stackedSums[s.stack][i] = (stackedSums[s.stack][i] || 0) + n;
@@ -7643,6 +7984,20 @@
         // 缓存最近一次渲染的 option，作为 generateChartEmbedCode 的兜底
         // （让复制嵌入代码不依赖 ECharts 实例仍在内存中）
         try { lastRenderedChartOption[config.id] = option; lastRenderedChartId = config.id; } catch (e) {}
+
+        // bak127：X 轴不是日期维度导致自动计算的变化率/增减量无数据时的友好提示（不再静默空白）
+        if (chartEmptyNotice) {
+            try {
+                option.graphic = [{
+                    type: 'text', left: 'center', top: 'middle',
+                    style: { text: chartEmptyNotice, fontSize: 13, fill: '#9CA3AF', textAlign: 'center', lineHeight: 20, width: 360 }
+                }];
+                if (option.xAxis) [].concat(option.xAxis).forEach(a => { a.show = false; });
+                if (option.yAxis) [].concat(option.yAxis).forEach(a => { a.show = false; });
+                if (option.grid) [].concat(option.grid).forEach(a => { a.show = false; });
+                option.tooltip = option.tooltip || {};
+            } catch (e) {}
+        }
 
         chart.setOption(option, true);
     }
@@ -11746,7 +12101,7 @@ function generateChartEmbedCode(chartId) {
             opt.xAxis.forEach(xa => {
                 if (!xa) return;
                 xa.nameTextStyle = Object.assign({}, xa.nameTextStyle || {}, { fontFamily: EMBED_FONT_FAMILY, fontSize: 13 });
-                xa.axisLabel = Object.assign({}, xa.axisLabel || {}, { fontFamily: EMBED_FONT_FAMILY, fontSize: 14, hideOverlap: true });                // 关键修复：fmt2 只对数值轴生效，避免 category 轴被转成 NaN
+                xa.axisLabel = Object.assign({}, xa.axisLabel || {}, { fontFamily: EMBED_FONT_FAMILY, fontSize: 14, hideOverlap: true, color: '#374151' });                // 关键修复：fmt2 只对数值轴生效，避免 category 轴被转成 NaN；bak129：显式色与嵌入页根 textStyle(#374151) 一致，避免主轴 axisLine 浅色经回退链拖浅 X 标签
                 let isNumeric = !xa.type || xa.type === 'value' || xa.type === 'log' || xa.type === 'time';
                 if (isNumeric) xa.axisLabel.formatter = buildAxisFmt(xa.name);
             });
@@ -12150,7 +12505,7 @@ function applyFmt2(opt) {
   if (Array.isArray(opt.xAxis)) {
     opt.xAxis.forEach(xa => {
       if (!xa) return;
-      xa.axisLabel = Object.assign({}, xa.axisLabel || {}, { fontFamily: EMBED_FONT_FAMILY, fontSize: 14, hideOverlap: true });
+      xa.axisLabel = Object.assign({}, xa.axisLabel || {}, { fontFamily: EMBED_FONT_FAMILY, fontSize: 14, hideOverlap: true, color: '#374151' });
       let isNumeric = !xa.type || xa.type === 'value' || xa.type === 'log' || xa.type === 'time';
       if (isNumeric) xa.axisLabel.formatter = buildAxisFmt(xa.name);
     });
