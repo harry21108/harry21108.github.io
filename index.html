@@ -4930,28 +4930,35 @@
     }
 
     const SXCOAL_PALETTE = ['#110303','#2D1007','#591F0D','#B23E19','#E1783E','#ECA342','#F1B844','#F6CD45','#F8DA75','#FAE6A5'];
+    // bak132 定稿：11 色「从深到浅」色阶 = SXCOAL_PALETTE 原序 + 品牌深红 #780000 按亮度
+    // 插在 #591F0D 与 #B23E19 之间（WCAG 亮度 0.002→0.796 严格递增）。深色（#110303 近黑、
+    // #2D1007/#591F0D 深棕）只能留在色阶头部——末端必须是最浅色，因为 Other 恒排最后。
+    const SXCOAL_R11 = ['#110303','#2D1007','#591F0D','#780000','#B23E19','#E1783E','#ECA342','#F1B844','#F6CD45','#F8DA75','#FAE6A5'];
     function getDynamicPalette(seriesCount, type = 'nonLine') {
         if (type === 'line') {
-            if (seriesCount > 4) return ['#110303', '#780000', '#E2711D', '#F6CD45', '#2EC4B6', '#3A86EF', '#591F0D', '#8D99AE'];
+            // bak130：>4 项的线图调色板同样不用近黑 #110303 打头——移到 1 号槽，
+            // 第一个从 #780000 起（用户反馈"第一个接近黑色太重"）。年份系列图按
+            // bak123 口径 reverse 前 nYears 槽：最新年份拿 0 号槽 #780000（与原设计
+            // "最新 #780000 最深"一致，仅 5+ 年份时倒数第二年从 #780000 变为 #110303）。
+            // bak131：线图为多色相设计（红→橙→黄→青→蓝），非「从深到浅」梯度，且年份系列
+            // 口径 bak123 已定型，故不随 nonLine 梯度改造；>4 项保留近黑槽位正符合用户
+            // "项目多时需要使用近黑色的图表还是要使用"
+            if (seriesCount > 4) return ['#780000', '#110303', '#E2711D', '#F6CD45', '#2EC4B6', '#3A86EF', '#591F0D', '#8D99AE'];
             return ['#780000', '#E2711D', '#F6CD45', '#2EC4B6', '#3A86EF', '#591F0D', '#110303', '#8D99AE'];
         }
-        // 非折线图使用 Sxcoal 从深到浅暖色调；项目较少时采用间隔取色，增强视觉区分度
-        let palette = SXCOAL_PALETTE.slice();
-        // 筛选/切片后仅剩 1-2 项时避开最深色（#110303/#2D1007 近黑），从 RGB(120,0,0) 起取色
+        // 非折线图：Sxcoal 品牌暖色按 SXCOAL_R11「从深到浅」取色（bak132 定稿）
+        // ① 项目少（≤8 项，浅色 8 槽够用）：从品牌深红 #780000 起顺次取浅色段——不用深色
+        //    打头（用户 bak130"第一个不选最深的接近黑色，个人感觉太重"）
+        // ② 项目多（≥9 项）：末端锚定最浅 #FAE6A5（Other 恒排最后→永远拿最浅色，用户
+        //    "other 永远是最后一个，其颜色应该是最浅的"），向头部逐一深化：
+        //    9 项 #591F0D 起、10 项 #2D1007 起、**11 项起才动用近黑 #110303**
+        //    （用户"虽然有10项，但还没轮到用近黑色，11项时就需要了"）
+        // 筛选/切片后仅剩 1-2 项时跳过中间深段，品牌深红起手、第二项直接用橙色增强对比
         if (seriesCount <= 2) {
             if (seriesCount <= 1) return ['#780000'];
             return ['#780000', '#E1783E'];
         }
-        if (seriesCount <= palette.length) {
-            if (seriesCount <= 1) return palette.slice(0, seriesCount);
-            let step = Math.max(1, Math.floor(palette.length / seriesCount));
-            let result = [];
-            for (let i = 0; i < seriesCount; i++) {
-                let idx = Math.min(i * step, palette.length - 1);
-                result.push(palette[idx]);
-            }
-            return result;
-        }
+        let palette = seriesCount <= 8 ? SXCOAL_R11.slice(3, 3 + seriesCount) : SXCOAL_R11.slice(Math.max(0, 11 - seriesCount));
         let result = [];
         for (let i = 0; i < seriesCount; i++) result.push(palette[i % palette.length]);
         return result;
@@ -7080,6 +7087,15 @@
         } else {
             xDataKeys.sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
         }
+        // bak130：名为 Other / 其它 / 其他 的类别一律排到最后，不再按数值大小插到中间
+        // （用户反馈：堆积图「China Thermal Coal Demand by Industry」图例中 Other 因数值大
+        // 排到第 2 位，要求"出现 Other 的都排到最后"）。仅按名称判定；TopN 溢出桶用的是
+        // 哨兵键（otherTxt+'\u0001overflow'），不匹配本函数，仍走既有的"push 到末尾"逻辑。
+        let isOtherCatName = function (name) {
+            if (name === undefined || name === null) return false;
+            let s = String(name).trim().toLowerCase();
+            return s === 'other' || s === '其它' || s === '其他';
+        };
         // bak126：X 轴为文本维度（非时间、且维度表未配置序号列）时，按度量总值从大到小
         // 排布，最大值在最左侧——与横向条形图「最大值在最上方」（见下方横向分支）口径一致
         // （用户反馈截图：省份 X 轴希望按值降序，如 Inner Mongolia 排最左）。
@@ -7091,6 +7107,9 @@
             let t = config.type;
             if (t === 'pie' || t === 'treemap' || t === 'ring-pie') return keys;
             return keys.slice().sort((a, b) => {
+                // bak130：Other 沉到数组末尾（纵向图=最右侧）
+                let oa = isOtherCatName(a), ob = isOtherCatName(b);
+                if (oa !== ob) return oa ? 1 : -1;
                 let totalA = 0, totalB = 0;
                 if (isSub) {
                     totalA = Object.values(groupMap[a] || {}).reduce((s, v) => s + (v || 0), 0);
@@ -7107,6 +7126,10 @@
         // 横向条形图：非时间维度按度量值升序排列（ECharts category Y 轴最后一个在顶部，故最大值放数组末尾）
         if (config.type.includes('horizontal') && !isTimeDimension(config.xField)) {
             xDataKeys.sort((a, b) => {
+                // bak130：Other 沉到数组开头（横向 category Y 轴首个在底部=视觉最底，
+                // 与纵向"最右侧"同为阅读顺序的末尾）
+                let oa = isOtherCatName(a), ob = isOtherCatName(b);
+                if (oa !== ob) return oa ? -1 : 1;
                 let totalA = 0, totalB = 0;
                 if (isSub) {
                     totalA = Object.values(groupMap[a] || {}).reduce((s, v) => s + (v || 0), 0);
@@ -7130,6 +7153,9 @@
                 return totalB - totalA;
             });
             let topKeys = sortedByValue.slice(0, topN);
+            // bak130：Other 类别在 TopN 截取后沉到末尾（横向图随后 reverse，Other 落到底部；
+            // 纵向图留在最右）——截取仍按数值竞争，只重新定位不改 TopN 成员
+            topKeys = topKeys.filter(k => !isOtherCatName(k)).concat(topKeys.filter(k => isOtherCatName(k)));
             // 横向条形图保持升序（最大值在数组末尾 -> 最上方）
             xDataKeys = config.type.includes('horizontal') ? topKeys.slice().reverse() : topKeys;
         }
@@ -7247,6 +7273,9 @@
             // 否则 virtual metric 路径的降序重排会把最大值翻到底部（bak126 纵向口径被误用到横向）
             if (config.type.includes('horizontal') && !isTimeDimension(config.xField)) {
                 xDataKeys.sort((a, b) => {
+                    // bak130：Other 沉底（数组开头=横向轴视觉最底）
+                    let oa = isOtherCatName(a), ob = isOtherCatName(b);
+                    if (oa !== ob) return oa ? -1 : 1;
                     let totalA = 0, totalB = 0;
                     totalA = groupMap[a] || 0; totalB = groupMap[b] || 0;
                     return totalA - totalB;
@@ -7343,7 +7372,12 @@
                     flatPieMap[k] = v;
                 }
             });
-            let sortedEntries = Object.entries(flatPieMap).sort((a,b) => b[1] - a[1]);
+            // bak130：名为 Other 的真实类别沉到扇面末尾（TopN 溢出桶本就 push 在最后）
+            let sortedEntries = Object.entries(flatPieMap).sort((a, b) => {
+                let oa = isOtherCatName(a[0]), ob = isOtherCatName(b[0]);
+                if (oa !== ob) return oa ? 1 : -1;
+                return b[1] - a[1];
+            });
             let topN = (config.topN && config.topN !== 'all') ? parseInt(config.topN) : sortedEntries.length;
             let pieData = [];
             if(sortedEntries.length > topN) {
@@ -7363,7 +7397,12 @@
                 label: { show: true, formatter: '{b}\n{d}%', overflow: 'break', width: 100, lineHeight: 16 }
             }];
         } else if (config.type === 'treemap') {
-            let entries = Object.entries(groupMap).filter(([k, v]) => v !== undefined && v !== null).sort((a, b) => b[1] - a[1]);
+            // bak130：名为 Other 的真实类别沉到末尾（不按数值）
+            let entries = Object.entries(groupMap).filter(([k, v]) => v !== undefined && v !== null).sort((a, b) => {
+                let oa = isOtherCatName(a[0]), ob = isOtherCatName(b[0]);
+                if (oa !== ob) return oa ? 1 : -1;
+                return b[1] - a[1];
+            });
             let topN = (config.topN && config.topN !== 'all') ? parseInt(config.topN) : entries.length;
             let treemapData = [];
             if (entries.length > topN) {
@@ -7394,7 +7433,13 @@
             Object.values(groupMap).forEach(xObj => {
                 Object.entries(xObj).forEach(([subKey, val]) => subTotals[subKey] = (subTotals[subKey] || 0) + val);
             });
-            let sortedSubCats = Object.entries(subTotals).sort((a, b) => b[1] - a[1]).map(e => e[0]);
+            // bak130：名为 Other/其它/其他 的系列类别沉到最后（用户反馈堆积图图例 Other 因
+            // 数值大排到第 2 位）；其余仍按总值降序。溢出桶哨兵不匹配 isOtherCatName，不受影响。
+            let sortedSubCats = Object.entries(subTotals).sort((a, b) => {
+                let oa = isOtherCatName(a[0]), ob = isOtherCatName(b[0]);
+                if (oa !== ob) return oa ? 1 : -1;
+                return b[1] - a[1];
+            }).map(e => e[0]);
             // bak123（第七十一轮，用户三次反馈后定型）：唯一系列维度是年份时的最终口径——
             //   ① 组内柱顺序 = 年份升序（旧→新，与参考折线图 image2 一致：2024 最左、2026 最右）；
             //   ② 图例顺序 = 年份降序（最新年份最左）——在 series 装配后显式覆写 option.legend.data
@@ -7416,6 +7461,8 @@
                     sortedSubCats = sortedSubCats.slice(cut).concat(sortedSubCats.slice(0, cut));
                 }
             }
+            // bak130：年份排序会冲掉 Other 沉底，这里再兜底一次（年份维度不会命中，仅防御）
+            sortedSubCats = sortedSubCats.filter(c => !isOtherCatName(c)).concat(sortedSubCats.filter(c => isOtherCatName(c)));
             let topN = (config.topN && config.topN !== 'all') ? parseInt(config.topN) : sortedSubCats.length;
             
             let displaySubCats = [];
