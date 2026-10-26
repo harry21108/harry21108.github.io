@@ -7759,6 +7759,20 @@
                 let g = getDateGranularity(scopedData, config.xField) || getDateGranularity(baseData, config.xField);
                 // bak128：X 轴是类别维度（省份/煤种…）+ 时间筛选时，Y2 同样按"各类别当期 vs 前一期"算
                 let catCrossY2 = null;
+                // 时间轴（年/月/日）情形：局部筛选含"时间维度"（如按年份维度勾选 2025/2026）或设了时间范围时，
+                // scopedData 已把"前一年"排除在外，导致较早年份的各月同比取不到去年同期（例：2025 月 vs 2024 月），
+                // 同比线只有最新一年有值。这里构造 rateBaseData：仅按"非时间维度"的局部筛选重新取数（时间维度放行），
+                // 让同比/增减量仍能回溯到上一年 —— 与 KPI 的 rateBaseData 口径对齐（KPI 早已有此处理）。
+                let lfsY2 = config.localFilters || [];
+                let timeScopedY2 = (config.timeScope && config.timeScope !== 'all') || lfsY2.some(f => isTimeDimension(f.field));
+                let rateBaseData = (g && timeScopedY2)
+                    ? (() => {
+                        let nonDateY2 = lfsY2.filter(f => !isTimeDimension(f.field));
+                        if (nonDateY2.length === lfsY2.length) return baseData;
+                        if (nonDateY2.length === 0) return filteredData;
+                        return filteredData.filter(d => checkLocalFilters(d, nonDateY2, filteredData));
+                    })()
+                    : scopedData;
                 if (!g && dateColumn && scopedData.length) {
                     let lfs2 = config.localFilters || [];
                     let timeScoped2 = (config.timeScope && config.timeScope !== 'all') || lfs2.some(f => isTimeDimension(f.field));
@@ -7788,7 +7802,7 @@
                     }
                     if (rm.kind === 'diff') {
                         let v = calcAutoPeriodChange({
-                            rows: scopedData, xField: config.xField, xValue: x,
+                            rows: rateBaseData, xField: config.xField, xValue: x,
                             valueField: rm.field, agg: config.agg || 'sum', rateType: rm.rateType,
                             calcOpts: calcOpts, granularity: g, keepTotal: explicitlyRequestedTotal
                         });
@@ -7796,7 +7810,7 @@
                         return v;
                     }
                     return calcAutoPeriodRate({
-                        rows: scopedData, xField: config.xField, xValue: x,
+                        rows: rateBaseData, xField: config.xField, xValue: x,
                         valueField: rm.field, agg: config.agg || 'sum', rateType: rm.rateType,
                         calcOpts: calcOpts, granularity: g, keepTotal: explicitlyRequestedTotal
                     });
