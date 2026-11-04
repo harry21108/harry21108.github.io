@@ -682,6 +682,12 @@
                 <button type="button" class="btn-build" style="margin-top:8px; font-size:12px; padding:4px 10px;" onclick="addUnitMapRow()" id="unitMapAddBtn">＋ 添加单位</button>
             </div>
             <div class="form-group">
+                <label id="changeTermTitle" style="font-weight:600;">变化方向术语（分析图表）</label>
+                <div id="changeTermHint" style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;"></div>
+                <div id="changeTermRows"></div>
+                <button type="button" class="btn-build" style="margin-top:8px; font-size:12px; padding:4px 10px;" onclick="addChangeTermRow()" id="changeTermAddBtn">＋ 添加字段</button>
+            </div>
+            <div class="form-group">
                 <label style="font-weight:600;">单位升档阶梯（大数自动进位，与上方双语映射共用）</label>
                 <div style="font-size:11px; color:#6B7280; margin:4px 0 8px; line-height:1.6;">系统已内置：质量（吨/kt/Mt/Bt·Tt）、货币（元·万元·亿元·万亿元、USD·USD mn·USD bn·USD tn）、电力（千瓦时·万千瓦时·亿千瓦时·万亿千瓦时、kWh·MWh·GWh·TWh·PWh）。英文进位读取上方映射产出的英文单位（Mt/TWh/USD bn…）。如需其它单位进位，在此补充：数值 ≥ 进位除数 时自动升到下一级。</div>
                 <div id="unitLadderRows"></div>
@@ -1219,7 +1225,7 @@
     let modelRelationships = [];
 
     let uiText = {
-        zh: { source: "来源：中国煤炭资源网", others: "其它", rangeLabel: "历史区间带", flat: "持平", all: "全部 (All)", edit: "编辑", delete: "删除", duplicate: "复制", enlarge: "放大", landscape: "横屏", close: "关闭", fullscreen: "全屏", download: "下载", copyImage: "复制图片", copyOk: "图片已复制到剪贴板", copyFail: "复制失败，已改为直接下载图片", embed: "嵌入代码", embedCopied: "已复制嵌入代码，可粘贴到其它平台", embedCopiedFailed: "复制失败，请手动选择", globalSlicerLabel: "添加全局非数值筛选器 (切片器)", addBtn: "添加", resetGlobal: "重置全局筛选", applyRefresh: "应用并刷新全盘", unitMapTitle: "数值单位双语映射（英文界面自动换算）", unitMapHint: "自动识别事实表表头括号内的单位。为每个单位填写英文单位名与换算数值（英文值 = 原值 ÷ 数值 或 × 数值）。例：亿千瓦时 → TWh，÷ 10。英文单位留空则该单位不换算。", unitMapAddBtn: "＋ 添加单位", globalSourceLabel: "图表来源 (支持双语自定义配置 - 全盘默认)", globalSourceHint: "全盘默认来源，图表未单独设置时显示此文案；留空则回退系统默认。", maUnitSuffix: "期", periodUnitMonth: "月", periodUnitDay: "日", periodUnitWeek: "周", periodUnitQuarter: "季度", periodUnitYear: "年", maPeriodLabel: "移动期数", histYearsLabel: "历史年数", histYearsHint: "年 (从最新年份往前推)", chartAnalyticsNone: "无", chartAnalyticsMA: "移动平均线", chartAnalyticsHistRange: "历史同期区间带",
+        zh: { source: "来源：中国煤炭资源网", others: "其它", rangeLabel: "历史区间带", flat: "持平", all: "全部 (All)", edit: "编辑", delete: "删除", duplicate: "复制", enlarge: "放大", landscape: "横屏", close: "关闭", fullscreen: "全屏", download: "下载", copyImage: "复制图片", copyOk: "图片已复制到剪贴板", copyFail: "复制失败，已改为直接下载图片", embed: "嵌入代码", embedCopied: "已复制嵌入代码，可粘贴到其它平台", embedCopiedFailed: "复制失败，请手动选择", globalSlicerLabel: "添加全局非数值筛选器 (切片器)", addBtn: "添加", resetGlobal: "重置全局筛选", applyRefresh: "应用并刷新全盘", unitMapTitle: "数值单位双语映射（英文界面自动换算）", unitMapHint: "自动识别事实表表头括号内的单位。为每个单位填写英文单位名与换算数值（英文值 = 原值 ÷ 数值 或 × 数值）。例：亿千瓦时 → TWh，÷ 10。英文单位留空则该单位不换算。", unitMapAddBtn: "＋ 添加单位", changeTermTitle: "变化方向术语（分析图表）", changeTermHint: "帕累托/瀑布等分析图的「增加/减少」标签。默认按字段名自动判定：价格→上涨/下跌，库存→累库/去库，产量→增产/减产，其余→增加/减少。下方「全盘默认」可一键指定；也可按字段单独覆盖（键填事实表原始列名）。中英文自动对应，随模板保存。", changeTermAddBtn: "＋ 添加字段", changeTermGlobal: "全盘默认", changeTermAuto: "自动判定", changeTermField: "字段名（与表头一致）", globalSourceLabel: "图表来源 (支持双语自定义配置 - 全盘默认)", globalSourceHint: "全盘默认来源，图表未单独设置时显示此文案；留空则回退系统默认。", maUnitSuffix: "期", periodUnitMonth: "月", periodUnitDay: "日", periodUnitWeek: "周", periodUnitQuarter: "季度", periodUnitYear: "年", maPeriodLabel: "移动期数", histYearsLabel: "历史年数", histYearsHint: "年 (从最新年份往前推)", chartAnalyticsNone: "无", chartAnalyticsMA: "移动平均线", chartAnalyticsHistRange: "历史同期区间带",
             chartAnalyticsAvg: "平均线", chartAnalyticsMedian: "中位线", chartAnalyticsMax: "最大值线", chartAnalyticsMin: "最小值线",
             chartAnalyticsP25: "P25 分位线", chartAnalyticsP75: "P75 分位线", chartAnalyticsStd: "±1σ 标准差带", chartAnalyticsTrend: "线性趋势线", chartAnalyticsTarget: "目标线", targetValueLabel: "目标值",
             periodUnitMonthSg: "月", periodUnitDaySg: "日", periodUnitWeekSg: "周", periodUnitQuarterSg: "季度", periodUnitYearSg: "年",
@@ -1229,7 +1235,7 @@
             lfChooseDim: "-- 选择维度 --", lfAll: "全选", lfClear: "清空", lfSearchPh: "搜索取值...",
             lfAggregate: "聚合显示", lfSeparate: "分别展示", lfNotSelected: "未选择", lfPickDim: "请先选择维度", lfAggTip: "多个取值的聚合方式", lfDelTip: "删除该筛选行",
             aggSum: "求和", aggAvg: "平均", aggMax: "最大", aggMin: "最小", aggCount: "计数" },
-        en: { source: "Source: Sxcoal", others: "Other", rangeLabel: "Hist Range Area", flat: "Flat", all: "All", edit: "Edit", delete: "Delete", duplicate: "Copy", enlarge: "Enlarge", landscape: "Landscape", close: "Close", fullscreen: "Fullscreen", download: "Download", copyImage: "Copy Image", copyOk: "Image copied to clipboard", copyFail: "Copy failed; image downloaded instead", embed: "Embed Code", embedCopied: "Embed code copied. Paste it into other platforms.", embedCopiedFailed: "Copy failed; please select manually.", globalSlicerLabel: "Add Global Non-numeric Filter (Slicer)", addBtn: "Add", resetGlobal: "Reset Global Filters", applyRefresh: "Apply & Refresh", unitMapTitle: "Bilingual Unit Mapping (English view)", unitMapHint: "Units in fact-table headers are auto-detected. Set the English unit and conversion factor (EN value = raw ÷ factor or × factor). E.g. 亿千瓦时 → TWh, ÷ 10. Leave EN unit empty to skip a unit.", unitMapAddBtn: "＋ Add Unit", globalSourceLabel: "Chart Source (Bilingual - Dashboard Default)", globalSourceHint: "Global default source shown on all charts unless a chart overrides it. Leave empty to fall back to the system default.", maUnitSuffix: "periods", periodUnitMonth: "Months", periodUnitDay: "Days", periodUnitWeek: "Weeks", periodUnitQuarter: "Quarters", periodUnitYear: "Years", maPeriodLabel: "MA Period", histYearsLabel: "Historical Years", histYearsHint: "years (counting back from the latest year)", chartAnalyticsNone: "None", chartAnalyticsMA: "Moving Average", chartAnalyticsHistRange: "Historical Range Band",
+        en: { source: "Source: Sxcoal", others: "Other", rangeLabel: "Hist Range Area", flat: "Flat", all: "All", edit: "Edit", delete: "Delete", duplicate: "Copy", enlarge: "Enlarge", landscape: "Landscape", close: "Close", fullscreen: "Fullscreen", download: "Download", copyImage: "Copy Image", copyOk: "Image copied to clipboard", copyFail: "Copy failed; image downloaded instead", embed: "Embed Code", embedCopied: "Embed code copied. Paste it into other platforms.", embedCopiedFailed: "Copy failed; please select manually.", globalSlicerLabel: "Add Global Non-numeric Filter (Slicer)", addBtn: "Add", resetGlobal: "Reset Global Filters", applyRefresh: "Apply & Refresh", unitMapTitle: "Bilingual Unit Mapping (English view)", unitMapHint: "Units in fact-table headers are auto-detected. Set the English unit and conversion factor (EN value = raw ÷ factor or × factor). E.g. 亿千瓦时 → TWh, ÷ 10. Leave EN unit empty to skip a unit.", unitMapAddBtn: "＋ Add Unit", changeTermTitle: "Change Direction Terms (Analysis Charts)", changeTermHint: "Labels for the Increase/Decrease series in Pareto & Waterfall charts. Auto-detected from the field name by default: price → Rise/Fall, inventory → Stock build/draw, output → Increase/Decrease, everything else → Increase/Decrease. Use the Global default row below to force one scheme, or override individual fields (key = the raw fact-table column name). Chinese and English stay paired; saved with the template.", changeTermAddBtn: "＋ Add Field", changeTermGlobal: "Global default", changeTermAuto: "Auto-detect", changeTermField: "Field name (as in header)", globalSourceLabel: "Chart Source (Bilingual - Dashboard Default)", globalSourceHint: "Global default source shown on all charts unless a chart overrides it. Leave empty to fall back to the system default.", maUnitSuffix: "periods", periodUnitMonth: "Months", periodUnitDay: "Days", periodUnitWeek: "Weeks", periodUnitQuarter: "Quarters", periodUnitYear: "Years", maPeriodLabel: "MA Period", histYearsLabel: "Historical Years", histYearsHint: "years (counting back from the latest year)", chartAnalyticsNone: "None", chartAnalyticsMA: "Moving Average", chartAnalyticsHistRange: "Historical Range Band",
             chartAnalyticsAvg: "Average", chartAnalyticsMedian: "Median", chartAnalyticsMax: "Max", chartAnalyticsMin: "Min",
             chartAnalyticsP25: "P25", chartAnalyticsP75: "P75", chartAnalyticsStd: "±1σ Band", chartAnalyticsTrend: "Linear Trend", chartAnalyticsTarget: "Target", targetValueLabel: "Target Value",
             periodUnitMonthSg: "Month", periodUnitDaySg: "Day", periodUnitWeekSg: "Week", periodUnitQuarterSg: "Quarter", periodUnitYearSg: "Year",
@@ -1296,6 +1302,8 @@
             cn: { type: 'text', title: '', desc: '', btn: '', url: '', image: '', alt: '', caption: '' },
             en: { type: 'text', title: '', desc: '', btn: '', url: '', image: '', alt: '', caption: '' }
         },
+        // bak144：分析图变化方向术语覆盖 { 原始列名|'*': presetKey }，未配置 = 按字段名自动判定
+        changeTermMap: {},
         slicers: [], kpis: [], charts: [], headerMap: {}, dateColumn: null
     };
 
@@ -2958,6 +2966,8 @@
     function applyGlobalSettings() {
         // 第四十四轮：先收存单位映射，再走统一刷新（末尾 switchLanguage 会整盘重渲，单位/数值立即生效）
         saveUnitMapFromUI();
+        // bak144：收存变化方向术语覆盖（保存后末尾 switchLanguage 会整盘重渲，术语立即生效）
+        try { saveChangeTermMapFromUI(); } catch (e) { console.warn('变化方向术语保存失败', e); }
         // 第六十一轮：收存单位升档阶梯（大数自动进位）
         try { saveUnitLadderFromUI(); } catch (e) { console.warn('单位升档阶梯保存失败', e); }
         // 计算字段：校验失败时保持弹窗打开，不执行保存
@@ -6886,6 +6896,78 @@
     function isAnalysisChartType(type) {
         return type === 'pareto' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado' || type === 'waterfall';
     }
+    // bak144：分析图表「增减方向」术语 —— 不再写死「增产/减产」。
+    // 旧实现中文恒为「增产/减产」，对销量、库存、价格等数据会说错话（英文 Increase/Decrease 本就中性）。
+    // 现按 Y 字段名保守自适应，并可在「全局设置 → 变化方向术语」按字段覆盖；中英各一套，同一套 preset 键。
+    const ANALYSIS_CHANGE_TERMS = {
+        neutral:    { zh: ['增加', '减少'], en: ['Increase', 'Decrease'],        labelZh: '增加 / 减少', labelEn: 'Increase / Decrease' },
+        production: { zh: ['增产', '减产'], en: ['Increase', 'Decrease'],        labelZh: '增产 / 减产', labelEn: 'Increase / Decrease' },
+        growth:     { zh: ['增长', '下降'], en: ['Growth', 'Decline'],           labelZh: '增长 / 下降', labelEn: 'Growth / Decline' },
+        inventory:  { zh: ['累库', '去库'], en: ['Stock build', 'Stock draw'],   labelZh: '累库 / 去库', labelEn: 'Stock build / Stock draw' },
+        price:      { zh: ['上涨', '下跌'], en: ['Rise', 'Fall'],                labelZh: '上涨 / 下跌', labelEn: 'Rise / Fall' }
+    };
+    const ANALYSIS_CHANGE_TERM_KEYS = ['auto', 'neutral', 'production', 'growth', 'inventory', 'price'];
+    // 保守规则：只认三类高置信词，其余一律中性，避免「销售额/库存均价/产量同比增速」这类复合词误判。
+    // 顺序有意：价格优先（「库存均价」应按价格读），再库存、产量。
+    function detectChangeTermPreset(fieldName) {
+        let s = String(fieldName || '');
+        // 比率/增速类字段先兜住：它们是"百分比的变化"，说「增产/减产」「累库/去库」都不准
+        if (/增速|增长率|同比|环比|增幅|涨跌幅|百分比|百分|percent|rate|growth|%|‰/i.test(s)) return 'neutral';
+        if (/价|price|指数|index|均价|单价|报价|成本|cost/i.test(s)) return 'price';
+        if (/库存|港存|场存|库容|inventory|stock/i.test(s)) return 'inventory';
+        if (/产量|产出|生产|产能|output|production/i.test(s)) return 'production';
+        return 'neutral';
+    }
+    // 优先级：按字段精确覆盖 > 全盘默认('*') > 字段名自适应 > 中性词。
+    function resolveChangeTerms(fieldName, isEn) {
+        let map = (dashboardConfig && dashboardConfig.changeTermMap) || {};
+        let hasOwn = Object.prototype.hasOwnProperty;
+        let raw = String(fieldName || '');
+        let preset = hasOwn.call(map, raw) ? map[raw] : (hasOwn.call(map, '*') ? map['*'] : 'auto');
+        if (!preset || preset === 'auto' || !ANALYSIS_CHANGE_TERMS[preset]) preset = detectChangeTermPreset(raw);
+        let term = ANALYSIS_CHANGE_TERMS[preset] || ANALYSIS_CHANGE_TERMS.neutral;
+        let pair = isEn ? term.en : term.zh;
+        return { inc: pair[0], dec: pair[1], preset: preset };
+    }
+    // bak141：分析图表紧凑布局——根据 X 类别最长标签 + 旋转角精确算出「底部留白」与「左侧留白」，
+    // 关闭 containLabel（它对旋转标签会过度预留，导致放大/横屏/复制图底部大片空白），改用手算值。
+    // bottom = 旋转后标签垂直投影 + extra；left = Y 轴刻度最大宽度 + 12（保证数值刻度不被裁）。
+    function computeAnalysisMargins(opt, xFontSize, xRotate, yFontSize, extra) {
+        let xLabels = (opt.xAxis && opt.xAxis[0] && Array.isArray(opt.xAxis[0].data)) ? opt.xAxis[0].data : [];
+        let maxW = 0;
+        xLabels.forEach(l => { if (l != null) maxW = Math.max(maxW, measureTextPx(String(l), xFontSize)); });
+        if (!maxW) maxW = 40;
+        let rad = (xRotate || 0) * Math.PI / 180;
+        let vExt = maxW * Math.sin(rad) + xFontSize;
+        let bottom = Math.ceil(vExt + (extra || 14));
+        let yVals = collectYAxisSeriesValues(opt, 0);
+        let yFmt = (v) => (window.currentLang === 'en' ? Number(v).toLocaleString('en-US') : String(v));
+        let yW = estimateYAxisLabelWidth(yVals, yFontSize, yFmt);
+        let left = Math.max(48, Math.ceil(yW) + 12);
+        return { bottom: bottom, left: left };
+    }
+    // bak141：分析图表 tooltip——过滤掉「值为空」的系列行（如增减双向堆叠里该类别没有的那一侧），
+    // 只保留有数值的系列 + 累计折线，避免 tooltip 出现一堆无值的空行（用户反馈「空值项」）。
+    // 累计占比% / 累计净贡献 按系列名识别做专用格式化；其余回落 formatChartNumber。
+    // 放在顶层：finalizeAnalysisOption（与 renderAnalysisChart 同级）需要引用它。
+    function analysisTooltipFormatter(params) {
+        if (!params) return '';
+        if (!Array.isArray(params)) params = [params];
+        let axisVal = (params[0] && (params[0].axisValueLabel != null ? params[0].axisValueLabel : params[0].axisValue)) || '';
+        let rows = [];
+        params.forEach(p => {
+            let v = p.value;
+            if (v === null || v === undefined || v === '' || (typeof v === 'number' && isNaN(v))) return;
+            let disp, nm = p.seriesName || '';
+            if (/累计占比%|Cumulative %/.test(nm)) disp = Number(v).toFixed(1) + '%';
+            else if (/累计净贡献|Cumulative Net/.test(nm)) disp = formatChartNumber(v);
+            else if (typeof p.valueFormatter === 'function') disp = p.valueFormatter(v);
+            else disp = formatChartNumber(v);
+            rows.push((p.marker || '') + nm + '：' + disp);
+        });
+        if (!rows.length) return '';
+        return '<div style="font-weight:600;margin-bottom:2px">' + (typeof escapeHtml === 'function' ? escapeHtml(String(axisVal)) : String(axisVal)) + '</div>' + rows.join('<br/>');
+    }
     // bak136：名为 Other / 其它 / 其他 的类别一律排到最后，不再按数值大小插到中间。
     // 原先它只是 updateEChartsInstance 内部的局部 let，renderAnalysisChart（另一个顶层函数）
     // 根本访问不到 → ReferenceError 直接中断整个渲染，4 类分析图表全部白板。
@@ -6931,6 +7013,8 @@
      * normalizeLegendDisplay 与主链路同口径 —— 单系列不显示图例（用户反馈"有些不该出现的图例"）。
      */
     function finalizeAnalysisOption(option, isEn) {
+        // bak141：过滤空值系列行（增减双向堆叠里该类别没有的那一侧不显示空行）
+        try { if (option.tooltip && !option.tooltip.formatter) option.tooltip.formatter = analysisTooltipFormatter; } catch (e) { /* ignore */ }
         try { applyYAxisUnitNameLayout(option, isEn, false); } catch (e) { /* ignore */ }
         // bak138：右轴单位名（累计占比%）原为右对齐到轴线右侧 → 伸出画布被裁（用户截图 1 右上角）。
         // 改为右对齐到轴线**左侧**（落在绘图区顶部的空白带里），保证完整可见。
@@ -6959,6 +7043,8 @@
         let agg = config.agg || 'sum';
         let yField = config.yField;
         let yLabel = getMetricDisplayNameOverride(config, 'y1') || getMappedValue(yField, lang);
+        // bak144：增减方向术语按「原始字段名」解析（设置项也以原始列名作键），不用翻译后的显示名
+        let ct = resolveChangeTerms(config.yField, isEn);
         let periodType = config.periodType || 'yoy';
         let periodLabel = (ANALYSIS_PERIOD_LABEL[periodType] || ANALYSIS_PERIOD_LABEL.yoy)[lang];
         let isOther = (k) => isOtherCatName(String(k));
@@ -7073,6 +7159,9 @@
             };
         }
 
+        // 分析图表 tooltip：过滤掉「值为空」的系列行（如增减双向堆叠里该类别没有的那一侧），
+        // 只保留有数值的系列 + 累计折线，避免 tooltip 出现一堆无值的空行（用户反馈「空值项」）。
+        // 累计占比% / 累计净贡献 按系列名识别做专用格式化；其余回落 formatChartNumber。
         // ---- 帕累托图：当期值降序 + 累计占比折线 ----
         if (config.type === 'pareto') {
             let entries = Object.keys(xAgg).map(k => ({ k, v: convUnit(calcValueForField(xAgg[k], yField, agg, calcOpts)) }))
@@ -7156,10 +7245,11 @@
             entries = foldDecreaseTail(entries, 2);
             entries = foldTopN(entries, e => e.v);
             let labels = entries.map(e => (e.isOtherBucket) ? othersLabel : getMappedValue(e.k, lang));
-            // bak138：拆成「增产 / 减产」两个堆叠系列 —— 每个系列一个固定颜色，
+            // bak138：拆成「正向 / 负向」两个堆叠系列 —— 每个系列一个固定颜色，
             // 图例里直接说明这两种颜色各代表什么，不再是一堆看不出规律的橙红点。
-            let incName = yLabel + ' · ' + (isEn ? 'Increase' : '增产');
-            let decName = yLabel + ' · ' + (isEn ? 'Decrease' : '减产');
+            // bak144：两个系列本来就出自同一 Y 字段，字段名前缀冗余（用户 Q1），删掉；
+            // 方向词改由 resolveChangeTerms 按数据字段自适应（用户 Q2），中英各一套。
+            let incName = ct.inc, decName = ct.dec;
             let cumName, cumArr, cumFmt, opt;
             if (!isNet) {
                 // 类型 A：累计占比%（右轴 0-100%，单调上升）
@@ -7222,14 +7312,15 @@
             let opt = baseOption(labels, axisUnitName, false);
             // yAxis 为数组形态（统一走数组），上下限写在第 0 个（数值轴）上
             opt.yAxis[0].max = Math.ceil(runningMax * 1.08); opt.yAxis[0].min = 0;
-            let totalName = (isEn ? 'Total' : '总量') + ' (' + startLabel + '/' + endLabel + ')';
+            // X 轴首尾类别已是「期初 / 期末」(Start / End)，图例不再重复标注（用户反馈）。
+            let totalName = isEn ? 'Total' : '总量';
             opt.series = [
                 { name: '_ph', type: 'bar', stack: 'wf', data: placeholder, itemStyle: { color: 'transparent' }, silent: true, tooltip: { show: false } },
                 { name: totalName, type: 'bar', stack: 'wf', data: sTotal, itemStyle: { color: ANALYSIS_COL_TOTAL }, barMaxWidth: 44 },
-                { name: isEn ? 'Increase' : '增产', type: 'bar', stack: 'wf', data: sPos, itemStyle: { color: ANALYSIS_COL_POS }, barMaxWidth: 44 },
-                { name: isEn ? 'Decrease' : '减产', type: 'bar', stack: 'wf', data: sNeg, itemStyle: { color: ANALYSIS_COL_NEG }, barMaxWidth: 44 }
+                { name: ct.inc, type: 'bar', stack: 'wf', data: sPos, itemStyle: { color: ANALYSIS_COL_POS }, barMaxWidth: 44 },
+                { name: ct.dec, type: 'bar', stack: 'wf', data: sNeg, itemStyle: { color: ANALYSIS_COL_NEG }, barMaxWidth: 44 }
             ];
-            opt.legend.data = [totalName, isEn ? 'Increase' : '增产', isEn ? 'Decrease' : '减产'];
+            opt.legend.data = [totalName, ct.inc, ct.dec];
             finalizeAnalysisOption(opt, isEn);
             chart.setOption(opt, true);
             return;
@@ -9717,6 +9808,7 @@ function applyChartAnalyticsI18N() {
         normalizeCurrentDateData(false);
         reconcileDateRangeWithData();
         renderUnitMapRows();
+        renderChangeTermRows();
         renderUnitLadderRows();
         renderCalcFieldRows();
         document.getElementById('gStartDate').value = dashboardConfig.dateRange.start || ''; document.getElementById('gEndDate').value = dashboardConfig.dateRange.end || '';
@@ -9759,6 +9851,21 @@ function applyChartAnalyticsI18N() {
         setText('unitMapTitle', t.unitMapTitle);
         setText('unitMapHint', t.unitMapHint);
         setText('unitMapAddBtn', t.unitMapAddBtn);
+        // bak144：变化方向术语设置区文案
+        setText('changeTermTitle', t.changeTermTitle || (_isEn ? 'Change Direction Terms (Analysis Charts)' : '变化方向术语（分析图表）'));
+        setText('changeTermHint', t.changeTermHint || '');
+        setText('changeTermAddBtn', t.changeTermAddBtn || (_isEn ? '＋ Add Field' : '＋ 添加字段'));
+        // 语言切换时把下拉文案一起换掉；先收存再重渲，避免丢失用户尚未点「应用」的编辑。
+        // 仅当设置行已渲染过才收存 —— 否则（弹窗从未打开）空容器会把模板载入的 map 清空。
+        try {
+            let ctBox = document.getElementById('changeTermRows');
+            if (ctBox && ctBox.querySelector('.local-filter-row')) {
+                // 配置被外部改动（模板载入/导出页恢复）→ 丢弃过期行，按当前配置重渲；否则先收存未应用编辑
+                let srcSame = ctBox.dataset.src === JSON.stringify(dashboardConfig.changeTermMap || {});
+                if (!srcSame) renderChangeTermRows();
+                else { saveChangeTermMapFromUI(); renderChangeTermRows(); }
+            }
+        } catch (e) {}
         // 第四十八轮：全盘默认来源区文案
         setText('globalSourceLabel', t.globalSourceLabel);
         setText('globalSourceHint', t.globalSourceHint);
@@ -10245,6 +10352,78 @@ function applyChartAnalyticsI18N() {
             map[u] = { en: en, op: op, factor: (isFinite(factor) && factor > 0) ? factor : 1 };
         });
         dashboardConfig.unitMap = map; // 新对象身份 → getUnitConv 缓存自动失效
+    }
+
+    // ===== bak144：变化方向术语编辑器（按字段覆盖 / 全盘默认）=====
+    // dashboardConfig.changeTermMap 形如 { '库存量': 'inventory', '*': 'neutral' }；
+    // 'auto' / 未配置 = 按字段名detectChangeTermPreset 自动判定。键用事实表原始列名。
+    function changeTermEscHtml(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function changeTermOptionsHtml(cur, isEn) {
+        let t = uiText[isEn ? 'en' : 'zh'] || uiText.zh;
+        return ANALYSIS_CHANGE_TERM_KEYS.map(k => {
+            let label = k === 'auto'
+                ? (t.changeTermAuto || (isEn ? 'Auto-detect' : '自动判定'))
+                : (isEn ? ANALYSIS_CHANGE_TERMS[k].labelEn : ANALYSIS_CHANGE_TERMS[k].labelZh);
+            return '<option value="' + k + '"' + (cur === k ? ' selected' : '') + '>' + changeTermEscHtml(label) + '</option>';
+        }).join('');
+    }
+    function buildChangeTermRow(field, cur, isEn, isGlobal) {
+        let t = uiText[isEn ? 'en' : 'zh'] || uiText.zh;
+        let row = document.createElement('div');
+        row.className = 'local-filter-row';
+        row.style.marginBottom = '6px';
+        row.dataset.field = field;
+        let nameCell = isGlobal
+            ? '<span style="width:34%; font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + changeTermEscHtml(t.changeTermGlobal || (isEn ? 'Global default' : '全盘默认')) + '</span>'
+            : '<input type="text" class="ct-field" value="' + changeTermEscHtml(field) + '" title="' + changeTermEscHtml(t.changeTermField || (isEn ? 'Field name' : '字段名')) + '" style="width:34%; min-width:0; font-size:12px;">';
+        let remove = isGlobal ? '' : '<button type="button" class="remove-btn" style="position:static; flex:0 0 auto; margin-left:4px; font-size:11px; color:#EF4444; cursor:pointer; background:none; border:none; padding:0 2px;" title="' + (isEn ? 'Remove' : '移除') + '" onclick="this.parentNode.remove()">✖</button>';
+        row.innerHTML = nameCell
+            + '<select class="ct-preset" style="width:54%;">' + changeTermOptionsHtml(cur || 'auto', isEn) + '</select>'
+            + remove;
+        return row;
+    }
+    function renderChangeTermRows() {
+        if (!dashboardConfig.changeTermMap || typeof dashboardConfig.changeTermMap !== 'object' || Array.isArray(dashboardConfig.changeTermMap)) dashboardConfig.changeTermMap = {};
+        let container = document.getElementById('changeTermRows');
+        if (!container) return;
+        let isEn = window.currentLang === 'en';
+        let map = dashboardConfig.changeTermMap;
+        container.innerHTML = '';
+        container.dataset.src = JSON.stringify(map); // 记住渲染时的配置，供 i18n 钩子判断是否被外部（模板载入）改过
+        // 第一行固定「全盘默认」；其余按已保存的字段覆盖项逐行渲染
+        container.appendChild(buildChangeTermRow('*', map['*'] || 'auto', isEn, true));
+        Object.keys(map).forEach(k => {
+            if (k === '*') return;
+            container.appendChild(buildChangeTermRow(k, map[k], isEn, false));
+        });
+    }
+    function addChangeTermRow() {
+        let container = document.getElementById('changeTermRows');
+        if (!container) return;
+        let isEn = window.currentLang === 'en';
+        let row = buildChangeTermRow('', 'auto', isEn, false);
+        container.appendChild(row);
+        let inp = row.querySelector('.ct-field');
+        if (inp) inp.focus();
+    }
+    function saveChangeTermMapFromUI() {
+        let container = document.getElementById('changeTermRows');
+        if (!container) return;
+        // 行尚未渲染（弹窗从未打开/程序化调用）时什么都不做，绝不把模板载入的配置清空
+        if (!container.querySelector('.local-filter-row')) return;
+        let map = {};
+        container.querySelectorAll('.local-filter-row').forEach(row => {
+            let key = row.dataset.field || '';
+            let nameEl = row.querySelector('.ct-field');
+            if (!key && nameEl) key = String(nameEl.value || '').trim();
+            if (!key) return;
+            let sel = row.querySelector('.ct-preset');
+            let preset = sel ? sel.value : 'auto';
+            if (preset && preset !== 'auto') map[key] = preset; // auto 不落库 = 跟随自动判定
+        });
+        dashboardConfig.changeTermMap = map;
     }
 
     // 第六十一轮：单位升档阶梯编辑器（与双语单位映射同页）。config 仅存用户自定义/覆盖项，内置默认在 getSummLadderStep 兜底。
@@ -11574,8 +11753,17 @@ function applyChartAnalyticsI18N() {
                     let hasSlider = dz.some(z => z && z.type === 'slider' && z.show !== false);
                     let gridBottom = hasSlider ? 50 : 20;
                     curOpt.dataZoom = dz;
+                    // 分析图表：X 类别标签倾斜（类似仪表盘）。containLabel 对旋转标签会过度预留，
+                    // 导致放大/横屏底部大片空白（用户反馈「空白地方太大」）。改为按最长标签+旋转角
+                    // 手算底部/左侧留白，并关闭 containLabel，既保证标签完整又不留空。
+                    let isAnalysisOv = isAnalysisChartType(config.type);
+                    let ovBottom = gridBottom, ovLeft = chartLeftEdge, ovContain = false;
+                    if (isAnalysisOv) {
+                        let m = computeAnalysisMargins(curOpt, 12, 30, 12, 10);
+                        ovBottom = m.bottom; ovLeft = m.left; ovContain = false;
+                    }
                     curOpt.grid = (Array.isArray(curOpt.grid) ? curOpt.grid.map(g => {
-                        return Object.assign({}, g, { top: bodyTop, bottom: gridBottom, left: chartLeftEdge, right: chartRightEdge, containLabel: false });
+                        return Object.assign({}, g, { top: bodyTop, bottom: ovBottom, left: ovLeft, right: ovLeft, containLabel: ovContain });
                     }) : curOpt.grid);
                     curOpt.title = (Array.isArray(curOpt.title) ? curOpt.title.map(t => Object.assign({}, t, { show: false, text: '' })) : [{ show: false, text: '' }]);
                     delete curOpt.subtitle;
@@ -11597,8 +11785,10 @@ function applyChartAnalyticsI18N() {
                     let hasSlider = dz.some(z => z && z.type === 'slider' && z.show !== false);
                     let gridBottom = hasSlider ? 50 : 20;
                     curOpt.dataZoom = dz;
+                    let isAnalysisOv2 = isAnalysisChartType(config.type);
+                    let analysisBottom2 = isAnalysisOv2 ? Math.max(gridBottom, 50) : gridBottom;
                     curOpt.grid = (Array.isArray(curOpt.grid) ? curOpt.grid.map(g => {
-                        return Object.assign({}, g, { top: 36, bottom: gridBottom, left: chartLeftEdge, right: chartRightEdge, containLabel: false });
+                        return Object.assign({}, g, { top: 36, bottom: analysisBottom2, left: chartLeftEdge, right: chartRightEdge, containLabel: isAnalysisOv2 ? true : false });
                     }) : curOpt.grid);
                     curOpt.title = (Array.isArray(curOpt.title) ? curOpt.title.map(t => Object.assign({}, t, { show: false, text: '' })) : [{ show: false, text: '' }]);
                     delete curOpt.subtitle;
@@ -11764,9 +11954,14 @@ function applyChartAnalyticsI18N() {
             opt.xAxis.forEach(xa => {
                 if (!xa) return;
                 xa.axisLabel = Object.assign({}, xa.axisLabel || {}, { fontSize: 10, color: '#374151', hideOverlap: true });
-                // bak138：分析图表在 520×310 紧凑画布上不能保留旋转标签 —— 旋转后的标签
-                // 会被底边裁掉（用户截图 1「显示不全」）。关掉旋转，交给 hideOverlap 取舍。
-                if (isAnalysisChartType(config.type)) xa.axisLabel.rotate = 0;
+                // 分析图表：X 类别标签倾斜（类似仪表盘），并强制显示全部（interval:0 + hideOverlap:false），
+                // 不再因 hideOverlap 自动隐藏而"无名"（复制图片读者无法对应省份）。520×310 底部留白已
+                // 为倾斜标签额外加高（见 footHeight 的 isDlAnalysis 分支），30° 投影可完整容纳。
+                if (isAnalysisChartType(config.type)) {
+                    xa.axisLabel.rotate = 30;
+                    xa.axisLabel.interval = 0;
+                    xa.axisLabel.hideOverlap = false;
+                }
                 if (xa.nameTextStyle) xa.nameTextStyle = Object.assign({}, xa.nameTextStyle, { fontSize: 10, color: '#4B5563' });
             });
         }
@@ -11905,14 +12100,21 @@ function applyChartAnalyticsI18N() {
         // 单位名直接显示在 Y/X 轴上（用户偏好：仪表盘下载图单位放轴上，与画布内图表一致）
         let bodyTop = hasLegend ? (legendTop + legendHeight + 4 + 20) : 32;
         // 底部留白：备注行多占一行（约 +24），所以没备注时收紧 24px，让 chart 区扩大、不留大片空白（用户反馈）。
-        // 之前 note ? 60 : 36 — X 轴文字（fontSize 默认 12，pixelRatio=2 输出 24px）与来源（y=ih-16=704）距离太近
-        // 新值 note ? 72 : 56：在 1200×720 输出里 grid.bottom = 56*2=112，X 轴底部 ~ y=632，来源 ~ y=704，距离 72px
         let footHeight = note ? 60 : 46;
+        // 分析图表：X 类别标签倾斜（30°）。containLabel 对旋转标签会过度预留 → 底部大片空白
+        // （用户反馈「空白地方太大」）。改为按最长标签+旋转角手算底部留白（含来源行空间），
+        // 并关闭 containLabel，左侧留白按 Y 轴刻度宽度手算，保证不裁刻度、不留空。
+        let isDlAnalysis = isAnalysisChartType(config.type);
+        if (isDlAnalysis) {
+            let m = computeAnalysisMargins(opt, 10, 30, 10, 24);
+            footHeight = m.bottom;
+            chartLeftEdge = m.left;
+        }
 
         // 单位名直接显示在 Y/X 轴上（用户偏好：仪表盘下载图单位放轴上，与画布内图表一致）
         // bak138：grid 兼容对象/数组两种形态 —— 分析图表自建 option 时 grid 是对象，
         // 若只处理数组形态，下载图的紧凑留白就不会生效（标签被底边裁掉）。
-        let _dlApplyGrid = (g) => Object.assign({}, g, { top: bodyTop, bottom: footHeight, left: chartLeftEdge, right: chartRightEdge, containLabel: g.containLabel !== false });
+        let _dlApplyGrid = (g) => Object.assign({}, g, { top: bodyTop, bottom: footHeight, left: chartLeftEdge, right: chartRightEdge, containLabel: isDlAnalysis ? false : (g.containLabel !== false) });
         if (Array.isArray(opt.grid) && opt.grid.length > 0) {
             opt.grid = opt.grid.map(_dlApplyGrid);
         } else if (opt.grid && typeof opt.grid === 'object') {
