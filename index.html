@@ -994,6 +994,11 @@
                     <option value="pie" data-page-node-id="RZQBxJbZMRkHvfsoNLVxPD">饼图 (占比展示)</option>
                     <option value="ring-pie" data-page-node-id="rzifRDCIFq8iOumykWicHG">环形饼图</option>
                     <option value="treemap" data-page-node-id="MNdVKxKFfBf4YVC5H7dTIX">树状矩形图</option>
+                    <option value="pareto" data-page-node-id="aParetoLvl">帕累托图</option>
+                    <option value="pareto-change" data-page-node-id="aParetoChg">变化贡献帕累托</option>
+                    <option value="pareto-change-net" data-page-node-id="aParetoChgNet">变化贡献帕累托·净贡献</option>
+                    <option value="tornado" data-page-node-id="aTornado">增减双向条形图</option>
+                    <option value="waterfall" data-page-node-id="aWaterfall">瀑布图 (变化桥)</option>
                 </select>
             </div>
             <div class="form-group" data-page-node-id="macfh9ngdyW9mXt8HJZrgF">
@@ -1044,7 +1049,7 @@
                 </div>
             </div>
         </div>
-        <div class="form-row" data-page-node-id="U4fPescDRogELsK8gtGUbq">
+        <div class="form-row" style="flex-wrap:wrap;" data-page-node-id="U4fPescDRogELsK8gtGUbq">
             <div class="form-group" style="flex: 0 0 200px;" data-page-node-id="QOHOdRG3yqEo4esDE8r5yd">
                 <label data-page-node-id="lD10rGQSFRtM8Up9fgTGT0">时间过滤范围</label>
                 <select id="chartTimeScopeSel" onchange="toggleCustomTime('chart')" data-page-node-id="tRQx1LNxuDgtRdxkGIGVx6">
@@ -1054,6 +1059,16 @@
                     <option value="custom-point" data-page-node-id="GXlDyrh4q6DF7rDjGUT7iX">自定义单点时间</option>
                     <option value="custom-range" data-page-node-id="EuulCouaHS5AEFIjDrz9Hx">自定义时间区间</option>
                 </select>
+            </div>
+            <div class="form-group" id="chartPeriodTypeGroup" style="display:none; flex: 0 0 200px;" data-page-node-id="aPeriodTypeGrp">
+                <label data-page-node-id="aPeriodTypeLbl">对比期 (变化基准)</label>
+                <select id="chartPeriodTypeSel" onchange="onChartPeriodTypeChange()" data-page-node-id="aPeriodTypeSel">
+                    <option value="yoy" data-page-node-id="aPtyoy">同比 (YoY)</option>
+                    <option value="mom" data-page-node-id="aPtmom">环比 (MoM)</option>
+                    <option value="wow" data-page-node-id="aPtwow">周环比 (WoW)</option>
+                    <option value="dod" data-page-node-id="aPtdod">日环比 (DoD)</option>
+                </select>
+                <p style="font-size:11px; color:#6B7280; margin:4px 0 0 0; line-height:1.4;">分析图表按此对比期自动计算各分类的变化量；Y 主度量请选<b>基础指标</b>（如 供应量）。已选的增减量/变化率虚拟指标会自动按内嵌周期折算，建议改选基础指标。</p>
             </div>
             <div class="form-group" style="flex: 1 1 auto; min-width: 0;" data-page-node-id="CkoYJ8wSfxpH8BvmcA7znk">
                 <label data-page-node-id="cA08UmMdjjkw5dLf7sx1fN">高级分析辅助线 <span style="font-weight:400; color:#6B7280; font-size:11px;" data-i18n-text="chartAnalyticsHint" data-page-node-id="WaHD4xbDvkaoNIAioWRsZH">(按住 Ctrl/Cmd 多选可叠加)</span></label>
@@ -2248,8 +2263,16 @@
         safeSet('chartSubSel', `<option value="">-- 无 --</option>` + displayOpts);
         safeSet('kpiFieldSel', numOpts);
         // 第三十七轮：Y 主度量与 Y2 次轴都提供"自动计算的变化率"虚拟指标（如：产量 · 同比%）
-        safeSet('chartYSel', numOpts + buildRateMetricOptions());
-        safeSet('chartY2Sel', numOpts + buildRateMetricOptions());
+        safeSet('chartYSel', getYFullOptionsHtml());
+        safeSet('chartY2Sel', getYFullOptionsHtml());
+    }
+    // 基础指标（不含 ::rate:: / ::diff:: 虚拟指标）下拉 HTML；分析类图表只许选基础指标，
+    // 因为它们自己会按「对比期」计算变化量，选虚拟指标会变成"差的差"而空白。
+    function getYBaseOptionsHtml() {
+        return (numericColumns || []).map(c => `<option value="${c}">${getMappedValue(c, window.currentLang)}</option>`).join('');
+    }
+    function getYFullOptionsHtml() {
+        return getYBaseOptionsHtml() + buildRateMetricOptions();
     }
 
     // 虚拟指标：字段名 + 周期，形如  产量::rate::yoy
@@ -3740,6 +3763,9 @@
                 let yearField = (columns || []).concat(dimensionColumns || []).find(c => isYearLikeField(c));
                 if (yearField) config.subField = yearField;
             }
+        }
+        if (config.type === 'pareto' || config.type === 'pareto-change' || config.type === 'pareto-change-net' || config.type === 'tornado' || config.type === 'waterfall') {
+            if (!config.periodType) config.periodType = 'yoy';
         }
         let t = config.type || '';
         let isLineFamily = (t === 'line' || t.indexOf('area') >= 0 || t === 'combo');
@@ -6836,6 +6862,380 @@
         } catch (e) {}
     }
 
+    // ===== 第九十轮：分析类图表（帕累托 / 变化贡献帕累托 / 增减双向条形 / 瀑布图）=====
+    // 统一在 updateEChartsInstance 早段短路返回，复用已准备好的 scopedData/baseData/chartData，
+    // 不改动主链路（柱/折/饼/组合），降低回归风险。X = 类别维度（省份/煤种…），Y = 度量（产量…）。
+    const ANALYSIS_FONT = '"Source Sans 3", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+    const ANALYSIS_PERIOD_LABEL = {
+        yoy: { zh: '同比', en: 'YoY' }, mom: { zh: '环比', en: 'MoM' },
+        wow: { zh: '周环比', en: 'WoW' }, dod: { zh: '日环比', en: 'DoD' }
+    };
+    // bak137：四类分析图表统一到 Sxcoal 色系（SXCOAL_R11 暖色阶）。
+    // 原先用通用语义绿/红（#1D9E75 / #A32D2D），与帕累托图的 Sxcoal 暖色阶
+    // 完全不是一个体系 —— 四张新图看起来像四个不同产品（用户反馈"颜色变化不统一"）。
+    // 现统一为：增产 = Sxcoal 暖橙 #E1783E；减产 = 品牌深红 #780000；合计 = 中性深灰 #444441。
+    const ANALYSIS_COL_NEG = '#780000', ANALYSIS_COL_POS = '#E1783E', ANALYSIS_COL_TOTAL = '#444441';
+    // bak139：累计占比% 折线改用「折线专用色系」，与柱状图暖色阶 SXCOAL_R11 分离。
+    // 原来用近黑 #110303 —— 它本就是 SXCOAL_R11 的第 0 槽，柱状图 ≥11 项时会动用近黑，
+    // 折线与其撞色（用户"折线换一个专门用于折线的Sxcoal色系，不和柱状图的混一起"）。
+    // 改取折线调色板(getDynamicPalette(_,'line')：红→橙→黄→青→蓝…) 中明显不属于柱状图
+    // 暖色阶的青/蓝/灰段，让折线一眼是"线"而非"又一根柱"。当前只用到第 0 槽（青）。
+    const ANALYSIS_LINE_PALETTE = ['#2EC4B6', '#3A86EF', '#8D99AE', '#0E7C7B', '#1B4965', '#5C6B73'];
+    const ANALYSIS_COL_LINE = ANALYSIS_LINE_PALETTE[0];
+    // bak138：4 类分析图表的类型判定（下载图/嵌入页需要按类型做紧凑布局调整）
+    function isAnalysisChartType(type) {
+        return type === 'pareto' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado' || type === 'waterfall';
+    }
+    // bak136：名为 Other / 其它 / 其他 的类别一律排到最后，不再按数值大小插到中间。
+    // 原先它只是 updateEChartsInstance 内部的局部 let，renderAnalysisChart（另一个顶层函数）
+    // 根本访问不到 → ReferenceError 直接中断整个渲染，4 类分析图表全部白板。
+    // 现提升为顶层函数，主链路与分析图表共用同一口径（哨兵键 otherTxt+'\u0001overflow' 不匹配）。
+    function isOtherCatName(name) {
+        if (name === undefined || name === null) return false;
+        let s = String(name).trim().toLowerCase();
+        return s === 'other' || s === '其它' || s === '其他';
+    }
+    function analysisEmptyOption(msg) {
+        return {
+            graphic: [{ type: 'text', left: 'center', top: 'middle', style: { text: msg, fill: '#9AA0A6', fontSize: 13, textAlign: 'center', width: 340 } }],
+            xAxis: { type: 'category', data: [] }, yAxis: { type: 'value' }, series: []
+        };
+    }
+    /**
+     * Y 轴单位名横排定位（第九轮口径，bak137 抽成公共函数供主链路与分析图表共用）。
+     * nameLocation='end' + nameTextStyle.align='left' + 负 padding 平移：
+     * 文字左缘落到 Y 轴数值标签的左缘，与主图完全一致。
+     */
+    function applyYAxisUnitNameLayout(option, isEn, isHorizontalChart) {
+        if (!option || isHorizontalChart || !Array.isArray(option.yAxis)) return;
+        option.yAxis = option.yAxis.map((ya, yi) => {
+            if (!ya || typeof ya !== 'object' || !ya.name) return ya;
+            let isRight = yi > 0;
+            let fmt = (ya.axisLabel && typeof ya.axisLabel.formatter === 'function')
+                ? ya.axisLabel.formatter
+                : (isEn ? (v) => Number(v).toLocaleString('en-US') : (v) => String(v));
+            let labelW = estimateYAxisLabelWidth(collectYAxisSeriesValues(option, yi), 11, fmt);
+            let axisX = (Array.isArray(option.grid) && option.grid[0] && typeof option.grid[0].left === 'number')
+                ? option.grid[0].left
+                : ((option.grid && typeof option.grid.left === 'number') ? option.grid.left : 48);
+            labelW = Math.min(labelW, Math.max(0, axisX - 10));
+            return Object.assign({}, ya, {
+                nameLocation: 'end',
+                nameGap: 24,
+                nameTextStyle: Object.assign({}, ya.nameTextStyle || {}, { fontSize: 11, color: '#6B7280', align: 'left', verticalAlign: 'top', padding: [0, 0, 0, isRight ? 8 : -(8 + labelW)] })
+            });
+        });
+    }
+    /**
+     * 分析图表收尾：单位名定位 + 图例规整。
+     * normalizeLegendDisplay 与主链路同口径 —— 单系列不显示图例（用户反馈"有些不该出现的图例"）。
+     */
+    function finalizeAnalysisOption(option, isEn) {
+        try { applyYAxisUnitNameLayout(option, isEn, false); } catch (e) { /* ignore */ }
+        // bak138：右轴单位名（累计占比%）原为右对齐到轴线右侧 → 伸出画布被裁（用户截图 1 右上角）。
+        // 改为右对齐到轴线**左侧**（落在绘图区顶部的空白带里），保证完整可见。
+        try {
+            if (Array.isArray(option.yAxis) && option.yAxis[1] && option.yAxis[1].name) {
+                option.yAxis[1].nameTextStyle = Object.assign({}, option.yAxis[1].nameTextStyle || {}, { align: 'right', padding: [0, 0, 0, -6] });
+            }
+        } catch (e) { /* ignore */ }
+        try { normalizeLegendDisplay(option); } catch (e) { /* ignore */ }
+        return option;
+    }
+    function analysisBuildXAgg(rows, xField) {
+        let m = {};
+        rows.forEach(r => {
+            let k = getXValue(r, xField);
+            if (k === '' || k === null || k === undefined) return;
+            (m[k] || (m[k] = [])).push(r);
+        });
+        return m;
+    }
+    function renderAnalysisChart(chart, config, ctx) {
+        let { scopedData, baseData, filteredData, chartData, calcOpts, isEn, dateColumn } = ctx;
+        let lang = window.currentLang || 'zh';
+        let t = uiText[lang] || uiText.zh;
+        let othersLabel = (t && t.others) || (lang === 'en' ? 'Others' : '其它');
+        let agg = config.agg || 'sum';
+        let yField = config.yField;
+        let yLabel = getMetricDisplayNameOverride(config, 'y1') || getMappedValue(yField, lang);
+        let periodType = config.periodType || 'yoy';
+        let periodLabel = (ANALYSIS_PERIOD_LABEL[periodType] || ANALYSIS_PERIOD_LABEL.yoy)[lang];
+        let isOther = (k) => isOtherCatName(String(k));
+        // 分析图表自带「对比期」计算变化量；若 Y 主度量误选了 增减量/变化率 虚拟指标，
+        // 自动回退到基础字段，并按虚拟指标内嵌的周期折算（避免"差的差"导致空白）。
+        let vm = parseVirtualMetricValue(yField);
+        if (vm) {
+            yField = vm.field;
+            periodType = vm.rateType || periodType;
+            periodLabel = (ANALYSIS_PERIOD_LABEL[periodType] || ANALYSIS_PERIOD_LABEL.yoy)[lang];
+        }
+
+        // 按 X 维度聚合当期值（帕累托构成 / 瀑布总量用）
+        let xAgg = analysisBuildXAgg(chartData, config.xField);
+
+        function sortByValDesc(entries, getV) {
+            entries.sort((a, b) => {
+                let oa = isOther(a.k), ob = isOther(b.k);
+                if (oa !== ob) return oa ? 1 : -1;
+                return getV(b) - getV(a);
+            });
+            return entries;
+        }
+        function sortByAbsDesc(entries, getV) {
+            entries.sort((a, b) => {
+                let oa = isOther(a.k), ob = isOther(b.k);
+                if (oa !== ob) return oa ? 1 : -1;
+                return Math.abs(getV(b)) - Math.abs(getV(a));
+            });
+            return entries;
+        }
+        function foldTopN(entries, getV) {
+            let topN = (config.topN && config.topN !== 'all') ? parseInt(config.topN) : null;
+            if (topN && entries.length > topN) {
+                let top = entries.slice(0, topN);
+                let rest = entries.slice(topN);
+                // 若已存在「其它」桶（如 foldDecreaseTail 产生），并入而非新建，避免双「其它」标签
+                let existing = rest.find(e => e.isOtherBucket);
+                if (existing) {
+                    let add = rest.filter(e => e !== existing).reduce((s, e) => s + (getV(e) || 0), 0);
+                    existing.v = (existing.v || 0) + add;
+                    entries = top.concat([existing]);
+                } else {
+                    let otherV = rest.reduce((s, e) => s + (getV(e) || 0), 0);
+                    entries = top.concat([{ k: othersLabel, v: otherV, isOtherBucket: true }]);
+                }
+            }
+            return entries;
+        }
+        /**
+         * bak138：下降值尾部折叠（用户诉求"下降值能否先列一两个代表，再加其它"）。
+         * 负向项只保留 1~2 个「代表」（按 |Δ| 从大到小）；数据里本来就叫「其它」的汇总行
+         * 不算代表（它是汇总不是省份），连同其余负向项合并成一个「其它」项放在末尾（净值，方向由位置/颜色表达，不另标注增减）。
+         * 副作用：负向柱收敛 → 图表不再出现橙/红交替的"颜色混乱"观感（用户截图 2/3）。
+         */
+        function foldDecreaseTail(entries, keepCount) {
+            let negs = entries.filter(e => e.v < 0);
+            if (!negs.length) return entries;
+            let named = negs.filter(e => !isOther(String(e.k)))
+                .sort((a, b) => Math.abs(b.v) - Math.abs(a.v))
+                .slice(0, keepCount);
+            let rest = negs.filter(e => named.indexOf(e) < 0);
+            if (!rest.length) return entries;
+            let sum = rest.reduce((s, e) => s + (e.v || 0), 0);
+            let out = entries.filter(e => rest.indexOf(e) < 0);
+            out.push({ k: othersLabel, v: sum, isOtherBucket: true, isDecreaseBucket: true });
+            return out;
+        }
+        // bak137：单位与英文换算 —— 与主链路同一套口径（用户反馈"英文单位没有变换"）：
+        //  ① Y 轴名放「单位」（万吨/Mt…）而不是度量名 → 与主图一致，且不再与图例文字重复；
+        //  ② 英文界面按 enUnitDivisor 折算（内置规则 + 全局设置→单位映射 unitMap 优先）；
+        //  ③ 轴刻度 / 提示框沿用主链路的 axisLabelConfig 与 formatChartNumber。
+        let unitY1 = extractPureUnit(yField, isEn) || '';
+        let enDiv = isEn ? (enUnitDivisor(yField) || 1) : 1;
+        let convUnit = (v) => (typeof v === 'number' && !isNaN(v)) ? (v / enDiv) : v;
+        // 轴名用「单位」（万吨/Mt…），与主链路一致；字段本身没带单位时退回度量名，避免轴上无名。
+        let axisUnitName = unitY1 || yLabel;
+
+        function baseOption(labels, yName, hasY2, y2Name) {
+            // 轴刻度：数值已由 convUnit 一次性折算到目标单位（英文 万吨→Mt 等），
+            // 这里不能再叠加 adaptAxisValueToUnit —— 它是主链路"数据未折算"的兜底，
+            // 分析图表用两次会让总量（>1000）被再除 100（瀑布图轴出现 1,000/500 与 20/15 混排）。
+            let axisLabelConfig = {
+                color: '#6E7079',
+                formatter: (val) => (window.currentLang === 'en'
+                    ? (typeof val === 'number' ? val.toLocaleString('en-US') : val)
+                    : val)
+            };
+            // 类别标签：不再强制 interval:0 —— 标签一多就会互相压字（瀑布图"Statbner Mongoll…"）。
+            // 改为 ECharts 自动隐藏重叠项 + 首尾强制保留（bak129 口径），项数多时旋转 30°。
+            // bak138：紧凑画布（下载图 520×310 / 窄屏卡片 280px）自适应 ——
+            // 旋转标签在矮画布上会被底边裁掉（用户截图 1「显示不全」），紧凑模式关旋转、
+            // 压缩上下留白，标签交给 hideOverlap 自动取舍。
+            let cw = (chart && typeof chart.getWidth === 'function') ? chart.getWidth() : 0;
+            let ch = (chart && typeof chart.getHeight === 'function') ? chart.getHeight() : 0;
+            let compact = (ch > 0 && ch < 320) || (cw > 0 && cw < 460);
+            let rot = (!compact && labels.length > 5) ? 30 : 0;
+            let fs = compact ? 10 : 12;
+            let yAxis = hasY2
+                ? [{ type: 'value', name: yName, nameTextStyle: { fontSize: 11, color: '#6B7280' }, axisLabel: Object.assign({}, axisLabelConfig, { fontSize: fs }), splitLine: { lineStyle: { color: '#EEF0F2' } } },
+                   { type: 'value', name: y2Name, max: 100, min: 0, nameTextStyle: { fontSize: 11, color: '#6B7280' }, axisLabel: { color: '#6E7079', fontSize: fs, formatter: (v) => v + '%' }, splitLine: { show: false } }]
+                : [{ type: 'value', name: yName, nameTextStyle: { fontSize: 11, color: '#6B7280' }, axisLabel: Object.assign({}, axisLabelConfig, { fontSize: fs }), splitLine: { lineStyle: { color: '#EEF0F2' } } }];
+            return {
+                tooltip: { trigger: 'axis', confine: true, valueFormatter: (val) => (val === null || val === undefined || isNaN(val)) ? '' : formatChartNumber(val) },
+                // 网格与图例沿用主链路口径：grid.top=56 给「图例(4~18px)」与「Y轴单位名(21~32px)」
+                // 各留一条横带，两者纵向分离不压字（此前 grid.top=40 时两者同处顶部 → 色块压住单位名）。
+                legend: { top: compact ? 2 : 4, left: 48, right: 48, type: 'scroll', itemGap: 10, itemWidth: 12, itemHeight: 14, textStyle: { fontSize: fs, fontFamily: ANALYSIS_FONT } },
+                // containLabel:true —— 长数字刻度（如 100,000）不再被左边界裁掉（截图 3 的":00,000"）
+                grid: { left: 48, right: 48, top: compact ? 40 : 56, bottom: compact ? 8 : 20, containLabel: true },
+                xAxis: { type: 'category', data: labels, axisLabel: { color: '#6E7079', fontSize: fs, showMinLabel: true, showMaxLabel: true, hideOverlap: true, rotate: rot }, axisLine: { lineStyle: { color: '#D1D5DB' } }, axisTick: { show: false } },
+                yAxis: yAxis
+            };
+        }
+
+        // ---- 帕累托图：当期值降序 + 累计占比折线 ----
+        if (config.type === 'pareto') {
+            let entries = Object.keys(xAgg).map(k => ({ k, v: convUnit(calcValueForField(xAgg[k], yField, agg, calcOpts)) }))
+                .filter(e => e.v !== null && e.v !== undefined && !isNaN(e.v));
+            if (!entries.length) { chart.setOption(analysisEmptyOption(isEn ? 'No data' : '暂无数据'), true); return; }
+            sortByValDesc(entries, e => e.v);
+            entries = foldTopN(entries, e => e.v);
+            let total = entries.reduce((s, e) => s + (e.v || 0), 0);
+            let cum = 0;
+            let cumArr = entries.map(e => { cum += (e.v || 0); return total ? (cum / total * 100) : 0; });
+            let labels = entries.map(e => (e.isOtherBucket) ? othersLabel : getMappedValue(e.k, lang));
+            let palette = getDynamicPalette(entries.length, 'nonLine');
+            let cumName = isEn ? 'Cumulative %' : '累计占比';
+            let opt = baseOption(labels, axisUnitName, true, cumName);
+            // opt.color = 实际用的色阶 → 图例色块与柱子同色（此前缺省会回落到 ECharts 默认蓝）
+            opt.color = palette;
+            opt.series = [
+                { name: yLabel, type: 'bar', data: entries.map((e, i) => ({ value: e.v, itemStyle: { color: palette[i % palette.length] } })), barMaxWidth: 44 },
+                { name: cumName, type: 'line', yAxisIndex: 1, data: cumArr, symbol: 'circle', symbolSize: 5, lineStyle: { width: 2, color: ANALYSIS_COL_LINE }, itemStyle: { color: ANALYSIS_COL_LINE }, connectNulls: false, tooltip: { valueFormatter: (v) => (v === null || v === undefined || isNaN(v)) ? '' : (Number(v).toFixed(1) + '%') } }
+            ];
+            opt.legend.data = [yLabel, cumName];
+            finalizeAnalysisOption(opt, isEn);
+            chart.setOption(opt, true);
+            return;
+        }
+
+        // ---- 需要"对比期"的三类：先取 per-X 变化量 ----
+        let g = getDateGranularity(scopedData, dateColumn) || getDateGranularity(baseData, dateColumn) || getDateGranularity(filteredData, dateColumn);
+        if (!dateColumn || !g) {
+            let msg = isEn
+                ? (config.type === 'waterfall' ? 'Waterfall' : ((config.type === 'pareto-change' || config.type === 'pareto-change-net') ? 'Contribution Pareto' : 'Tornado'))
+                    + ' needs a date field + a time scope (Latest period / a specific month) to compare categories.'
+                : (config.type === 'waterfall' ? '瀑布图' : ((config.type === 'pareto-change' || config.type === 'pareto-change-net') ? '变化贡献帕累托' : '增减双向图'))
+                    + '需要 X 轴为日期维度且设定时间范围（最新一期/具体某月）才能对比类别变化。';
+            chart.setOption(analysisEmptyOption(msg), true);
+            return;
+        }
+        let m = calcCategoryPeriodMetrics({ scopedRows: scopedData, fullRows: filteredData, dateCol: dateColumn, granularity: g, xField: config.xField, valueField: yField, agg: agg, rateType: periodType, kind: 'diff', calcOpts: calcOpts });
+        if (!m) {
+            let periods = Array.from(new Set(filteredData.map(d => String(d[dateColumn] || '')))).filter(Boolean).sort();
+            let reason = isEn ? 'No comparable period found.' : '未找到可对比的期次。';
+            if (!scopedData || !scopedData.length) reason += (isEn ? ' (current period has no rows — check Time scope / global date filter)'
+                : '（当前期次无数据：请检查「时间范围」或全局日期筛选）');
+            else if (periods.length <= 1) reason += (isEn ? ' (data has only 1 period — widen time range / global date filter)'
+                : '（数据中只有 1 个期次：请放宽「时间范围」或全局日期筛选）');
+            else if (periodType === 'yoy') reason += (isEn ? ' (YoY needs same month last year — try MoM)'
+                : '（同比需去年同月数据，若数据只跨单年请改用「环比 MoM」）');
+            chart.setOption(analysisEmptyOption(reason), true); return;
+        }
+        // 变化量也按英文单位折算（万吨→Mt），否则英文轴上是 80,000 而轴名写着 Mt
+        let entries = Object.keys(m.byX).map(k => ({ k, v: convUnit(m.byX[k]) })).filter(e => e.v !== null && e.v !== undefined && !isNaN(e.v));
+        if (!entries.length) { chart.setOption(analysisEmptyOption(isEn ? 'No data' : '暂无数据'), true); return; }
+
+        // ---- 增减双向条形图（Tornado）：per-X 变化量，0 轴为界 ----
+        if (config.type === 'tornado') {
+            sortByAbsDesc(entries, e => e.v);
+            entries = foldDecreaseTail(entries, 2);
+            entries = foldTopN(entries, e => e.v);
+            let labels = entries.map(e => (e.isOtherBucket) ? othersLabel : getMappedValue(e.k, lang));
+            let title = yLabel + ' · ' + periodLabel;
+            let opt = baseOption(labels, axisUnitName, false);
+            // bak138：单系列 → 与主链路单系列柱状图同款用品牌深红 #780000。
+            // 之前按正负上色，排序又是按 |Δ| 降序 → 橙/红在图上乱跳（用户"颜色混乱"）。
+            // 增减方向本来就由零轴左右表达，颜色不再承担语义，图面立刻干净。
+            let barColor = getDynamicPalette(1, 'nonLine')[0];
+            opt.color = [barColor];
+            opt.series = [{ name: title, type: 'bar', data: entries.map(e => ({ value: e.v, itemStyle: { color: barColor } })), barMaxWidth: 44 }];
+            opt.legend.data = [title];
+            finalizeAnalysisOption(opt, isEn);
+            chart.setOption(opt, true);
+            return;
+        }
+
+        // ---- 变化贡献帕累托：|变化量| 降序 + 累计折线 ----
+        //   类型 A (pareto-change)      ：累计占比% —— 累计 |Δ| / 总 |Δ| ×100，单调 0→100%（中性，不区分方向）
+        //   类型 B (pareto-change-net)  ：累计净贡献 —— 累计「带符号变化量」逐期累加，起点为负（最大降幅先拖累），
+        //                                之后由增产项把它往回拉，终点 = 全部类别的净变化合计（与瀑布图 期末−期初 同义）。
+        if (config.type === 'pareto-change' || config.type === 'pareto-change-net') {
+            let isNet = (config.type === 'pareto-change-net');
+            sortByAbsDesc(entries, e => e.v);              // 两类都按 |Δ| 降序（标准帕累托）
+            entries = foldDecreaseTail(entries, 2);
+            entries = foldTopN(entries, e => e.v);
+            let labels = entries.map(e => (e.isOtherBucket) ? othersLabel : getMappedValue(e.k, lang));
+            // bak138：拆成「增产 / 减产」两个堆叠系列 —— 每个系列一个固定颜色，
+            // 图例里直接说明这两种颜色各代表什么，不再是一堆看不出规律的橙红点。
+            let incName = yLabel + ' · ' + (isEn ? 'Increase' : '增产');
+            let decName = yLabel + ' · ' + (isEn ? 'Decrease' : '减产');
+            let cumName, cumArr, cumFmt, opt;
+            if (!isNet) {
+                // 类型 A：累计占比%（右轴 0-100%，单调上升）
+                let totalAbs = entries.reduce((s, e) => s + Math.abs(e.v || 0), 0);
+                let cum = 0;
+                cumArr = entries.map(e => { cum += Math.abs(e.v || 0); return totalAbs ? (cum / totalAbs * 100) : 0; });
+                cumName = isEn ? 'Cumulative %' : '累计占比%';
+                cumFmt = (v) => (v === null || v === undefined || isNaN(v)) ? '' : (Number(v).toFixed(1) + '%');
+                opt = baseOption(labels, axisUnitName, true, cumName);
+            } else {
+                // 类型 B：累计净贡献（带符号逐期累加，单位同 Y，右轴允许负值）
+                let cum = 0;
+                cumArr = entries.map(e => { cum += (e.v || 0); return cum; });
+                cumName = isEn ? 'Cumulative Net' : '累计净贡献';
+                cumFmt = (v) => (v === null || v === undefined || isNaN(v)) ? '' : formatChartNumber(v);
+                opt = baseOption(labels, axisUnitName, true, cumName);   // 先用 0-100% 右轴骨架
+                // 右轴改为「带符号、同 Y 单位、不追加 %」：起点为负=拖累，终点=净变化合计
+                opt.yAxis[1].max = undefined; opt.yAxis[1].min = undefined;
+                let fs2 = (opt.yAxis[1].axisLabel && opt.yAxis[1].axisLabel.fontSize) || 12;
+                opt.yAxis[1].axisLabel = {
+                    color: '#6E7079', fontSize: fs2,
+                    formatter: (val) => (window.currentLang === 'en' ? (typeof val === 'number' ? val.toLocaleString('en-US') : val) : val)
+                };
+            }
+            opt.color = [ANALYSIS_COL_POS, ANALYSIS_COL_NEG];
+            opt.series = [
+                { name: incName, type: 'bar', stack: 'pc', data: entries.map(e => (e.v >= 0 ? e.v : null)), itemStyle: { color: ANALYSIS_COL_POS }, barMaxWidth: 44 },
+                { name: decName, type: 'bar', stack: 'pc', data: entries.map(e => (e.v < 0 ? Math.abs(e.v) : null)), itemStyle: { color: ANALYSIS_COL_NEG }, barMaxWidth: 44 },
+                { name: cumName, type: 'line', yAxisIndex: 1, data: cumArr, symbol: 'circle', symbolSize: 5, lineStyle: { width: 2, color: ANALYSIS_COL_LINE }, itemStyle: { color: ANALYSIS_COL_LINE }, connectNulls: false, tooltip: { valueFormatter: cumFmt } }
+            ];
+            opt.legend.data = [incName, decName, cumName];
+            finalizeAnalysisOption(opt, isEn);
+            chart.setOption(opt, true);
+            return;
+        }
+
+        // ---- 瀑布图（变化桥）：期初总量 → 各省增减 → 期末总量 ----
+        if (config.type === 'waterfall') {
+            sortByValDesc(entries, e => e.v); // 增产在前、减产在后
+            entries = foldDecreaseTail(entries, 2);
+            entries = foldTopN(entries, e => e.v);
+            let curTotal = 0;
+            Object.keys(xAgg).forEach(k => { let v = convUnit(calcValueForField(xAgg[k], yField, agg, calcOpts)); if (typeof v === 'number' && !isNaN(v)) curTotal += v; });
+            let prevTotal = curTotal - entries.reduce((s, e) => s + e.v, 0);
+            let startLabel = isEn ? 'Start' : '期初';
+            let endLabel = isEn ? 'End' : '期末';
+            let labels = [startLabel].concat(entries.map(e => (e.isOtherBucket) ? othersLabel : getMappedValue(e.k, lang))).concat([endLabel]);
+            let placeholder = [], sTotal = [], sPos = [], sNeg = [];
+            placeholder.push(0); sTotal.push(prevTotal); sPos.push(null); sNeg.push(null); // 期初
+            let running = prevTotal, runningMax = Math.max(prevTotal, 0);
+            entries.forEach(e => {
+                let base = running, top = running + e.v;
+                placeholder.push(Math.min(base, top)); // 透明基底 = 台阶下沿
+                if (e.v >= 0) { sTotal.push(null); sPos.push(e.v); sNeg.push(null); }
+                else { sTotal.push(null); sPos.push(null); sNeg.push(Math.abs(e.v)); } // 负向台阶用"正幅度+红"堆叠到基底上沿之下
+                running = top;
+                runningMax = Math.max(runningMax, Math.max(base, top));
+            });
+            placeholder.push(0); sTotal.push(running); sPos.push(null); sNeg.push(null); // 期末
+            let opt = baseOption(labels, axisUnitName, false);
+            // yAxis 为数组形态（统一走数组），上下限写在第 0 个（数值轴）上
+            opt.yAxis[0].max = Math.ceil(runningMax * 1.08); opt.yAxis[0].min = 0;
+            let totalName = (isEn ? 'Total' : '总量') + ' (' + startLabel + '/' + endLabel + ')';
+            opt.series = [
+                { name: '_ph', type: 'bar', stack: 'wf', data: placeholder, itemStyle: { color: 'transparent' }, silent: true, tooltip: { show: false } },
+                { name: totalName, type: 'bar', stack: 'wf', data: sTotal, itemStyle: { color: ANALYSIS_COL_TOTAL }, barMaxWidth: 44 },
+                { name: isEn ? 'Increase' : '增产', type: 'bar', stack: 'wf', data: sPos, itemStyle: { color: ANALYSIS_COL_POS }, barMaxWidth: 44 },
+                { name: isEn ? 'Decrease' : '减产', type: 'bar', stack: 'wf', data: sNeg, itemStyle: { color: ANALYSIS_COL_NEG }, barMaxWidth: 44 }
+            ];
+            opt.legend.data = [totalName, isEn ? 'Increase' : '增产', isEn ? 'Decrease' : '减产'];
+            finalizeAnalysisOption(opt, isEn);
+            chart.setOption(opt, true);
+            return;
+        }
+    }
+
     function updateEChartsInstance(chart, config) {
         upgradeLegacyChartConfig(config);
         let isTopN = config.topN !== undefined && config.topN > 0;
@@ -6921,6 +7321,13 @@
                 let sortVal = dRow[sortInfo.sortCol];
                 if (dispVal) xSortValues[dispVal] = sortVal;
             });
+        }
+
+        // 第九十轮：分析类图表（帕累托 / 变化贡献帕累托 / 增减双向 / 瀑布）短路返回，
+        // 复用上面已准备好的 scopedData/baseData/filteredData/chartData，自建完整 option，不进主链路。
+        if (config.type === 'pareto' || config.type === 'pareto-change' || config.type === 'pareto-change-net' || config.type === 'tornado' || config.type === 'waterfall') {
+            renderAnalysisChart(chart, config, { scopedData: scopedData, baseData: baseData, filteredData: filteredData, chartData: chartData, calcOpts: calcOpts, isEn: isEn, dateColumn: dateColumn });
+            return;
         }
 
         let xDisplayMap = {};
@@ -7091,11 +7498,7 @@
         // （用户反馈：堆积图「China Thermal Coal Demand by Industry」图例中 Other 因数值大
         // 排到第 2 位，要求"出现 Other 的都排到最后"）。仅按名称判定；TopN 溢出桶用的是
         // 哨兵键（otherTxt+'\u0001overflow'），不匹配本函数，仍走既有的"push 到末尾"逻辑。
-        let isOtherCatName = function (name) {
-            if (name === undefined || name === null) return false;
-            let s = String(name).trim().toLowerCase();
-            return s === 'other' || s === '其它' || s === '其他';
-        };
+        // bak136：isOtherCatName 已提升为顶层函数（renderAnalysisChart 也要用），此处不再重复定义。
         // bak126：X 轴为文本维度（非时间、且维度表未配置序号列）时，按度量总值从大到小
         // 排布，最大值在最左侧——与横向条形图「最大值在最上方」（见下方横向分支）口径一致
         // （用户反馈截图：省份 X 轴希望按值降序，如 Inner Mongolia 排最左）。
@@ -8003,29 +8406,8 @@
         // "万吨"横排放在 45000 数值正上方、左缘与数值左缘对齐；第八轮竖排方案不符预期，撤销）。
         // nameGap=24 让单位落在图例与最上方数值标签之间（grid.top=56/26 已预留空间）。
         // 横向条形图例外：X 轴单位仍按原 end/nameGap=5 紧贴末端，保持既有紧凑布局。
-        if (!isHorizontalChart && Array.isArray(option.yAxis)) {
-            option.yAxis = option.yAxis.map((ya, yi) => {
-                if (!ya || typeof ya !== 'object' || !ya.name) return ya;
-                let isRight = yi > 0;
-                // 复用该轴自身的 axisLabel.formatter（内含 adaptAxisValueToUnit 单位换算），
-                // 估宽才能与实际渲染的刻度文本一致（第十一轮 image1：英文单位左移过量）。
-                // 仅当轴未自带 formatter 时才退回朴素英文 toLocaleString / 中文 String。
-                let fmt = (ya.axisLabel && typeof ya.axisLabel.formatter === 'function')
-                    ? ya.axisLabel.formatter
-                    : (window.currentLang === 'en'
-                        ? (v) => Number(v).toLocaleString('en-US')
-                        : (v) => String(v));
-                let labelW = estimateYAxisLabelWidth(collectYAxisSeriesValues(option, yi), 11, fmt);
-                // 钳制：单位左缘不越出画布（axisX = grid.left；嵌入页 2 位小数标签可能很宽）
-                let axisX = (Array.isArray(option.grid) && option.grid[0] && typeof option.grid[0].left === 'number') ? option.grid[0].left : 48;
-                labelW = Math.min(labelW, Math.max(0, axisX - 10));
-                return Object.assign({}, ya, {
-                    nameLocation: 'end',
-                    nameGap: 24,
-                    nameTextStyle: Object.assign({}, ya.nameTextStyle || {}, { fontSize: 11, color: '#6B7280', align: 'left', verticalAlign: 'top', padding: [0, 0, 0, isRight ? 8 : -(8 + labelW)] })
-                });
-            });
-        }
+        // bak137：抽成 applyYAxisUnitNameLayout 供分析图表共用同一套定位口径。
+        applyYAxisUnitNameLayout(option, isEn, isHorizontalChart);
 
         // 横向条形图：X 轴单位名紧贴末端（nameGap 缩到 5，nameLocation='end'），不与右侧 chart 区争空间。
         // 配合 grid.right=24（上面已设）让"万吨"等单位紧凑显示，避免大块空白 + 单位挤在最右。
@@ -8521,8 +8903,22 @@
         let y2NameGrp = document.getElementById('chartY2NameGroup');
         if (y2NameGrp) y2NameGrp.style.display = (type === 'combo') ? 'block' : 'none';
         // 系列/堆叠维度在柱状图、条形图、折线图、面积图、组合图、季节图中均可用
-        let hasSub = type.includes('bar') || type.includes('horizontal') || type === 'line' || type.includes('area') || type === 'combo' || type === 'seasonal-lines';
+        // 分析类图表（帕累托/瀑布/增减双向）为单系列按 X 维度聚合，不需要「系列/对比维度」
+        let isAnalysisType = (type === 'pareto' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado' || type === 'waterfall');
+        let hasSub = (type.includes('bar') || type.includes('horizontal') || type === 'line' || type.includes('area') || type === 'combo' || type === 'seasonal-lines') && !isAnalysisType;
         document.getElementById('chartSubGroup').style.display = hasSub ? 'block' : 'none';
+        // 对比期（变化基准）仅 waterfall / 变化贡献帕累托(含净贡献) / 增减双向条形 需要；帕累托图用当期值，不需要
+        let ptGrp = document.getElementById('chartPeriodTypeGroup');
+        if (ptGrp) ptGrp.style.display = (type === 'waterfall' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado') ? 'block' : 'none';
+        // 分析类图表自己按「对比期」算变化量，Y 主度量必须为基础指标；
+        // 将 ::rate:: / ::diff:: 虚拟指标选项置灰禁用，避免用户选到后空白（已选中的旧配置仍保留，渲染时自动折算）。
+        let yEl = document.getElementById('chartYSel');
+        if (yEl) {
+            Array.from(yEl.options).forEach(opt => {
+                let isVirtual = (opt.value.indexOf('::rate::') >= 0) || (opt.value.indexOf('::diff::') >= 0);
+                opt.disabled = isAnalysisType && isVirtual;
+            });
+        }
         // 系列/对比维度说明：告诉用户选了之后会「每个取值一条系列」，可实现不同月份 / 年份 / 品种对比
         let subHint = document.getElementById('chartSubHint');
         if (subHint) {
@@ -8556,6 +8952,21 @@
             document.getElementById('chartYLabel').textContent = 'Y 轴主度量';
         }
         toggleAnalyticsParams();
+    }
+
+    // 第九十一轮：对比期（变化基准）下拉缺少 onchange —— 之前选了 环比/同比 不会生效，
+    // 图表一直用默认 同比(yoy)；若数据只跨单一年份，同比找不到去年同期的期次 → 分析图空白。
+    // 这里让改动即时写入正在编辑的图表配置并实时重绘（无需先点保存也能看到效果）。
+    function onChartPeriodTypeChange() {
+        let el = document.getElementById('chartPeriodTypeSel');
+        if (!el) return;
+        let idEl = document.getElementById('editChartId');
+        let id = idEl ? (idEl.value || '') : '';
+        let cfg = id ? (dashboardConfig.charts.find(c => c.id === id)) : null;
+        if (cfg) {
+            cfg.periodType = el.value || 'yoy';
+            try { renderSingleChart(id); } catch (e) { console.error('对比期实时重绘失败', e); }
+        }
     }
 
     // 高级分析辅助线：移动平均线(自定义期数) / 历史同期区间带(自定义年数) / 平均/中位/最大/最小/P25/P75/±1σ/趋势/目标
@@ -10337,6 +10748,8 @@ function applyChartAnalyticsI18N() {
         })();
 
         document.getElementById('chartTimeScopeSel').value = c.timeScope || 'all';
+        let ptEl = document.getElementById('chartPeriodTypeSel');
+        if (ptEl) ptEl.value = c.periodType || 'yoy';
         document.getElementById('chartCustomStart').value = c.customStart || ''; document.getElementById('chartCustomEnd').value = c.customEnd || '';
         renderAnalyticsPills();
         let analyticsArr = getChartAnalytics(c);
@@ -10399,6 +10812,7 @@ function applyChartAnalyticsI18N() {
             y2NameZh: (function () { let el = document.getElementById('chartY2NameZh'); return el ? (el.value || '').trim() : ''; })(),
             y2NameEn: (function () { let el = document.getElementById('chartY2NameEn'); return el ? (el.value || '').trim() : ''; })(),
             yField2: type === 'combo' ? document.getElementById('chartY2Sel').value : null, timeScope: document.getElementById('chartTimeScopeSel').value,
+            periodType: (function () { let el = document.getElementById('chartPeriodTypeSel'); return el ? (el.value || 'yoy') : 'yoy'; })(),
             customStart: document.getElementById('chartCustomStart').value, customEnd: document.getElementById('chartCustomEnd').value,
             analytics: (function() {
                 // 多选 pill：从已 active 的 chip 取 value，去重并剔除 none
@@ -11350,6 +11764,9 @@ function applyChartAnalyticsI18N() {
             opt.xAxis.forEach(xa => {
                 if (!xa) return;
                 xa.axisLabel = Object.assign({}, xa.axisLabel || {}, { fontSize: 10, color: '#374151', hideOverlap: true });
+                // bak138：分析图表在 520×310 紧凑画布上不能保留旋转标签 —— 旋转后的标签
+                // 会被底边裁掉（用户截图 1「显示不全」）。关掉旋转，交给 hideOverlap 取舍。
+                if (isAnalysisChartType(config.type)) xa.axisLabel.rotate = 0;
                 if (xa.nameTextStyle) xa.nameTextStyle = Object.assign({}, xa.nameTextStyle, { fontSize: 10, color: '#4B5563' });
             });
         }
@@ -11493,8 +11910,13 @@ function applyChartAnalyticsI18N() {
         let footHeight = note ? 60 : 46;
 
         // 单位名直接显示在 Y/X 轴上（用户偏好：仪表盘下载图单位放轴上，与画布内图表一致）
+        // bak138：grid 兼容对象/数组两种形态 —— 分析图表自建 option 时 grid 是对象，
+        // 若只处理数组形态，下载图的紧凑留白就不会生效（标签被底边裁掉）。
+        let _dlApplyGrid = (g) => Object.assign({}, g, { top: bodyTop, bottom: footHeight, left: chartLeftEdge, right: chartRightEdge, containLabel: g.containLabel !== false });
         if (Array.isArray(opt.grid) && opt.grid.length > 0) {
-            opt.grid = opt.grid.map(g => Object.assign({}, g, { top: bodyTop, bottom: footHeight, left: chartLeftEdge, right: chartRightEdge, containLabel: g.containLabel !== false }));
+            opt.grid = opt.grid.map(_dlApplyGrid);
+        } else if (opt.grid && typeof opt.grid === 'object') {
+            opt.grid = _dlApplyGrid(opt.grid);
         }
         if (Array.isArray(opt.dataZoom) && opt.dataZoom.length > 0) {
             opt.dataZoom = opt.dataZoom.map(z => (z && z.type === 'slider') ? Object.assign({}, z, { show: false }) : z);
@@ -11525,7 +11947,9 @@ function applyChartAnalyticsI18N() {
         });
         // 更新 grid 让出 pie/treemap 区域
         if (Array.isArray(opt.grid) && opt.grid.length > 0) {
-            opt.grid = opt.grid.map(g => Object.assign({}, g, { top: bodyTop, bottom: footHeight, left: chartLeftEdge, right: chartRightEdge, containLabel: g.containLabel !== false }));
+            opt.grid = opt.grid.map(_dlApplyGrid);
+        } else if (opt.grid && typeof opt.grid === 'object') {
+            opt.grid = _dlApplyGrid(opt.grid);
         }
 
         // 饼/环标签防叠（第六十六轮）：第一遍渲染收集矩形 → 全局链式下推 → 第二遍按 dy 渲染
@@ -12163,6 +12587,8 @@ function generateChartEmbedCode(chartId) {
                 if (!xa) return;
                 xa.nameTextStyle = Object.assign({}, xa.nameTextStyle || {}, { fontFamily: EMBED_FONT_FAMILY, fontSize: 13 });
                 xa.axisLabel = Object.assign({}, xa.axisLabel || {}, { fontFamily: EMBED_FONT_FAMILY, fontSize: 14, hideOverlap: true, color: '#374151' });                // 关键修复：fmt2 只对数值轴生效，避免 category 轴被转成 NaN；bak129：显式色与嵌入页根 textStyle(#374151) 一致，避免主轴 axisLine 浅色经回退链拖浅 X 标签
+                // bak138：分析图表在嵌入页同样不保留旋转标签（containLabel:false 时旋转标签会溢出画布被裁）
+                if (isAnalysisChartType(config.type)) xa.axisLabel.rotate = 0;
                 let isNumeric = !xa.type || xa.type === 'value' || xa.type === 'log' || xa.type === 'time';
                 if (isNumeric) xa.axisLabel.formatter = buildAxisFmt(xa.name);
             });
