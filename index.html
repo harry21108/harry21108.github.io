@@ -1005,6 +1005,9 @@
                     <option value="pareto-change-net" data-page-node-id="aParetoChgNet">变化贡献帕累托·净贡献</option>
                     <option value="tornado" data-page-node-id="aTornado">增减双向条形图</option>
                     <option value="waterfall" data-page-node-id="aWaterfall">瀑布图 (变化桥)</option>
+                    <option value="flow-matrix" data-page-node-id="aFlowMatrix">流向矩阵热力图</option>
+                    <option value="flow-sankey" data-page-node-id="aFlowSankey">多阶段流向图 (桑基)</option>
+                    <option value="bubble" data-page-node-id="aBubble">气泡式区域对比</option>
                 </select>
             </div>
             <div class="form-group" data-page-node-id="macfh9ngdyW9mXt8HJZrgF">
@@ -1037,6 +1040,23 @@
             <div class="form-group" id="chartY2Group" style="display:none;" data-page-node-id="rAAV2Man26sNHbURqhOnWU">
                 <label data-page-node-id="7eoxCj76tTxAUWeSCCqzWY">Y 轴次度量</label>
                 <select id="chartY2Sel" data-page-node-id="8BjcAtKLmJiBlg7xZBtknj"></select>
+            </div>
+        </div>
+        <div class="form-row" id="flowFieldsRow" style="display:none; flex-wrap:wrap;" data-page-node-id="aFlowFieldsRow">
+            <div class="form-group" id="flowStage3Group" style="flex: 0 0 200px;">
+                <label id="flowStage3Label">第 3 阶段字段</label>
+                <select id="chartFlowStage3Sel" onchange="toggleChartFields()"></select>
+            </div>
+            <div class="form-group" id="flowStage4Group" style="flex: 0 0 200px;">
+                <label id="flowStage4Label">第 4 阶段字段 (可选)</label>
+                <select id="chartFlowStage4Sel" onchange="toggleChartFields()"></select>
+            </div>
+            <div class="form-group" id="bubbleSizeGroup" style="flex: 0 0 200px; display:none;">
+                <label id="bubbleSizeLabel">气泡大小度量 (可选)</label>
+                <select id="chartBubbleSizeSel"></select>
+            </div>
+            <div class="form-group" style="flex: 1 1 100%;">
+                <p id="flowFieldsHint" style="font-size:11px; color:#6B7280; margin:2px 0 0 0; line-height:1.5;"></p>
             </div>
         </div>
         <div class="form-row" data-page-node-id="metricNameRow01">
@@ -1076,7 +1096,7 @@
                 </select>
                 <p style="font-size:11px; color:#6B7280; margin:4px 0 0 0; line-height:1.4;">分析图表按此对比期自动计算各分类的变化量；Y 主度量请选<b>基础指标</b>（如 供应量）。已选的增减量/变化率虚拟指标会自动按内嵌周期折算，建议改选基础指标。</p>
             </div>
-            <div class="form-group" style="flex: 1 1 auto; min-width: 0;" data-page-node-id="CkoYJ8wSfxpH8BvmcA7znk">
+            <div class="form-group" id="analyticsGroup" style="flex: 1 1 auto; min-width: 0;" data-page-node-id="CkoYJ8wSfxpH8BvmcA7znk">
                 <label data-page-node-id="cA08UmMdjjkw5dLf7sx1fN">高级分析辅助线 <span style="font-weight:400; color:#6B7280; font-size:11px;" data-i18n-text="chartAnalyticsHint" data-page-node-id="WaHD4xbDvkaoNIAioWRsZH">(按住 Ctrl/Cmd 多选可叠加)</span></label>
                 <!-- 用 checkbox pill 取代原本 size=7 的多选下拉，节省垂直空间 -->
                 <div id="chartAnalyticsPills" style="display:flex; flex-wrap:wrap; gap:4px; padding:4px 0;" data-page-node-id="0Eps3WmnGazgkMLr2xLoCk"></div>
@@ -2161,7 +2181,13 @@
                     for(let key of columns) {
                         let val = row[key];
                         if(key === dateColumn) {
-                            newRow[key] = parseToStandardDate(val);
+                            // bak145：期次标签的 E 后缀（2026-10E / 2026年10月E）表示分析师给出的预判值。
+                            // 日期管线不接受非标准日期（会让整表被时间筛选过滤成空白），故解析前去掉 E，
+                            // 同时在行上留内部标记，渲染期据此把该期画成虚线并补回 E 标签。
+                            let rawDate = String(val == null ? '' : val).trim();
+                            let projTag = /E\s*$/i.test(rawDate) && /\d/.test(rawDate);
+                            newRow[key] = parseToStandardDate(projTag ? rawDate.replace(/E\s*$/i, '') : val);
+                            if (projTag) newRow.__isProjection = 1;
                         } else if(val !== null && val !== undefined && val !== '') {
                             let strVal = String(val).trim();
                             if (strVal.endsWith('%') && !isNaN(parseFloat(strVal))) {
@@ -2181,7 +2207,7 @@
                 rawData = json;
                 window.storedRawData = rawData;
                 // 保存事实表原始列，后续按"事实表列"过滤度量列，避免维度表里的"日期序号/省份序号"等同名列泄漏到 Y 轴
-                factColumns = json.length ? Object.keys(json[0]).filter(c => c !== undefined && c !== null && String(c).trim() !== '') : [];
+                factColumns = json.length ? Object.keys(json[0]).filter(c => c !== undefined && c !== null && String(c).trim() !== '' && String(c).indexOf('__') !== 0) : [];
                 normalizeCurrentDateData(true);
 
                 enrichRawDataWithDimensions();
@@ -2269,6 +2295,10 @@
         safeSet('slicerFieldSel', displayOpts);
         safeSet('chartXSel', getXAxisFieldOptions());
         safeSet('chartSubSel', `<option value="">-- 无 --</option>` + displayOpts);
+        // bak145：阶段 1 流向类图表的额外维度 / 气泡大小度量
+        safeSet('chartFlowStage3Sel', `<option value="">-- 无 --</option>` + displayOpts);
+        safeSet('chartFlowStage4Sel', `<option value="">-- 无 --</option>` + displayOpts);
+        safeSet('chartBubbleSizeSel', `<option value="">-- 同 Y 主度量 --</option>` + numOpts);
         safeSet('kpiFieldSel', numOpts);
         // 第三十七轮：Y 主度量与 Y2 次轴都提供"自动计算的变化率"虚拟指标（如：产量 · 同比%）
         safeSet('chartYSel', getYFullOptionsHtml());
@@ -6635,14 +6665,17 @@
     }
     // 通用文本宽度实测（canvas measureText）：用于 Y 轴单位名等任意文本。
     // 次轴单位名变长时（如 "RMB/t" → "百万美元/吨"）需要据此加宽右侧留白，避免被画布右缘裁切。
-    function measureTextPx(text, fontSize) {
+    function measureTextPx(text, fontSize, fontFamily) {
         let s = String(text === null || text === undefined ? '' : text);
         if (!s) return 0;
+        // fontFamily 可选：ECharts 的 axis.name 默认用 'sans-serif' 渲染，
+        // 而网页字体栈量出来的宽度会偏小（实测 "RMB mn" 10px：35 vs 39），
+        // 用它估算轴单位所需留白会把文字挤出画布右缘（用户反馈复制图 Y2 单位显示不全）。
         try {
             let cv = document.createElement('canvas');
             let ctx = cv.getContext && cv.getContext('2d');
             if (ctx) {
-                ctx.font = fontSize + 'px "Source Sans 3", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+                ctx.font = fontSize + 'px ' + (fontFamily || '"Source Sans 3", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif');
                 let mw = ctx.measureText(s).width;
                 if (mw > 0) return Math.ceil(mw);
             }
@@ -7327,6 +7360,412 @@
         }
     }
 
+    /* ==================== bak145：分析师审核录入的预测/预判值「表达层」 ====================
+       用户口径：预测值由分析师给出并审核，看板只负责把「实际 / 预判」画得一眼可辨，
+       绝不做基于历史数据的自动外推。识别三条路径（现有数据全不命中 → 对老图表零改动）：
+         1) X 期次标签带 E 后缀（2026-09E / 2026年9月E / 2026E）
+         2) 事实表存在标记列 is_projection / 预测标记 / 数据状态 …，取值为真
+         3) 系列名本身含 预测/预估/目标/规划/Forecast/Projected
+       折线/面积：拆成实线段 + 虚线段（沿用同一 name，不新增图例项、点击同步开关）；
+       柱/饼/散点：斜纹 decal + 虚线边框；预测起点：竖直虚线 + 淡色底纹；
+       标记列命中的期次补 E 后缀，tooltip 表头与 X 轴自动自证「这是预判」。 */
+    const PROJ_FONT = '"Source Sans 3", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+    const PROJ_MARKER_COL_RE = /^(is[_-]?projection|projection|forecast|estimate|est|预测|预判|预估|预测标记|数据状态|数据类型)$/i;
+    const PROJ_TRUE_RE = /^(1|true|yes|y|t|是|e|est|estimate|estimated|forecast|forecasted|projected|projection|预测|预估|预判|计划|目标|规划值)$/i;
+    const PROJ_NAME_RE = /(预测|预估值|预判|预估|目标值|规划|estimate|estimated|forecast|forecasted|projected|projection)/i;
+    const PROJ_HELPER_RE = /(移动平均|趋势|平均|中位|区间|参考|上限|下限|目标线|P25|P75|σ|MA\b|Trend|Average|Median|Band|Lower|Upper|Target|Std)/i;
+    const PROJ_DECAL = { symbol: 'rect', symbolSize: 1, color: 'rgba(255,255,255,0.72)', dashArrayX: [1, 0], dashArrayY: [2, 4], rotation: -Math.PI / 4 };
+
+    function isProjectionRow(row) {
+        if (!row) return false;
+        // 数据装载期从 E 后缀日期里剥离出来的内部标记（不进字段列表、不参与聚合）
+        if (row.__isProjection) return true;
+        try {
+            for (let k in row) {
+                if (!PROJ_MARKER_COL_RE.test(k)) continue;
+                let v = row[k];
+                if (v === null || v === undefined || v === '') continue;
+                if (PROJ_TRUE_RE.test(String(v).trim())) return true;
+            }
+        } catch (e) {}
+        return false;
+    }
+    function hasProjectionSuffix(label) {
+        let s = String(label == null ? '' : label).trim();
+        // 末尾 E 且串里含数字才算期次标记（避免把 "Grade E" 这类普通类名误判为预测）；
+        // 中文「2026年10月E」里 E 不紧跟数字，故用「含数字 + 末尾 E」而非 \d\s*E。
+        return (/E\s*$/i.test(s) && /\d/.test(s)) || /(预测|预判|预估)[值期]?$/i.test(s) || /\b(forecast|projected|estimate)\b/i.test(s);
+    }
+    function projectionMaskFor(option, config, rows, isEn, xKeys) {
+        let xa = Array.isArray(option.xAxis) ? option.xAxis[0] : option.xAxis;
+        let labels = (xa && Array.isArray(xa.data)) ? xa.data.map(v => String(v == null ? '' : v)) : [];
+        if (!labels.length) return null;
+        let mask = labels.map(hasProjectionSuffix);
+        let xf = config && config.xField;
+        let projRaw = {};
+        (rows || []).forEach(r => {
+            if (!isProjectionRow(r)) return;
+            let raw = getXValue(r, xf);
+            if (raw === '' || raw === null || raw === undefined) return;
+            projRaw[String(raw)] = 1;
+            let disp = getMappedValue(raw, isEn ? 'en' : 'zh');
+            let idx = labels.indexOf(String(disp));
+            if (idx < 0) idx = labels.indexOf(String(raw));
+            if (idx < 0) idx = labels.findIndex(l => l && l.indexOf(String(raw)) >= 0);
+            if (idx >= 0) mask[idx] = true;
+        });
+        // 英文界面 X 标签会被 canonicalizePeriodLabelsEn 本地化成 "Jan 1, 2026"，
+        // 字符串已对不上原始期次；用主链路的 xDataKeys 按下标精确对齐，语言无关。
+        if (Array.isArray(xKeys)) xKeys.forEach((k, i) => { if (i < mask.length && projRaw[String(k)]) mask[i] = true; });
+        if (!mask.some(Boolean)) return null;
+        return { labels: labels, mask: mask };
+    }
+    function projItemValue(d) {
+        if (d === null || d === undefined) return null;
+        if (Array.isArray(d)) return null;
+        if (typeof d === 'object') return (d.value === undefined ? null : d.value);
+        return d;
+    }
+    function projStyledItem(d, color) {
+        let base = (d && typeof d === 'object' && !Array.isArray(d)) ? Object.assign({}, d) : { value: d };
+        let st = Object.assign({}, base.itemStyle || {});
+        st.decal = Object.assign({}, PROJ_DECAL);
+        st.borderType = 'dashed';
+        st.borderWidth = 1.5;
+        if (color && !st.borderColor) st.borderColor = color;
+        base.itemStyle = st;
+        return base;
+    }
+    function applyProjectionStyle(option, config, rows, xKeys) {
+        if (!option || !Array.isArray(option.series) || !option.series.length) return option;
+        let isEn = (window.currentLang === 'en');
+        let info = projectionMaskFor(option, config, rows, isEn, xKeys);
+        let labels = info ? info.labels : null;
+        let globalMask = info ? info.mask : null;
+        if (labels) {
+            for (let i = 0; i < labels.length; i++) {
+                if (globalMask[i] && !hasProjectionSuffix(labels[i])) labels[i] = labels[i] + 'E';
+            }
+            let xa = Array.isArray(option.xAxis) ? option.xAxis[0] : option.xAxis;
+            if (xa && Array.isArray(xa.data)) xa.data = labels.slice();
+        }
+        let firstIdx = globalMask ? globalMask.indexOf(true) : -1;
+        let colorArr = Array.isArray(option.color) ? option.color : [];
+        let added = [];
+        option.series.forEach((s, si) => {
+            if (!s || !Array.isArray(s.data) || !s.data.length) return;
+            let name = String(s.name || '');
+            if (name === '_ph' || name === HIST_RANGE_LOWER || name === STAT_BAND_LOWER || PROJ_HELPER_RE.test(name)) return;
+            let mask = (globalMask && s.data.length === labels.length)
+                ? globalMask.slice()
+                : s.data.map(d => hasProjectionSuffix(d && typeof d === 'object' ? d.name : ''));
+            if (PROJ_NAME_RE.test(name)) mask = mask.map(() => true);
+            if (!mask.some(Boolean)) return;
+            let type = String(s.type || '');
+            let color = (s.itemStyle && s.itemStyle.color) || (s.lineStyle && s.lineStyle.color) || colorArr[si % Math.max(1, colorArr.length)] || '#780000';
+            if (type === 'line') {
+                let actual = s.data.map((d, i) => mask[i] ? null : d);
+                let proj = s.data.map((d, i) => mask[i] ? d : null);
+                let last = -1;
+                for (let i = 0; i < s.data.length; i++) {
+                    if (!mask[i] && projItemValue(s.data[i]) !== null && projItemValue(s.data[i]) !== undefined) last = i;
+                }
+                if (last >= 0 && proj[last] === null) proj[last] = s.data[last];
+                s.data = actual;
+                if (proj.some(v => v !== null)) {
+                    let dashed = Object.assign({}, s, {
+                        data: proj,
+                        lineStyle: Object.assign({}, s.lineStyle || {}, { type: 'dashed' }),
+                        itemStyle: Object.assign({}, s.itemStyle || {}, { color: color, borderColor: color, borderWidth: 1.5 }),
+                        symbol: 'emptyCircle',
+                        symbolSize: (typeof s.symbolSize === 'number' ? s.symbolSize : 6) + 1
+                    });
+                    delete dashed.markLine; delete dashed.markArea;
+                    added.push(dashed);
+                }
+            } else if (type === 'bar' || type === 'pie' || type === 'scatter' || type === 'effectScatter') {
+                s.data = s.data.map((d, i) => mask[i] ? projStyledItem(d, color) : d);
+            }
+        });
+        if (added.length) option.series = option.series.concat(added);
+        if (labels && firstIdx >= 0) {
+            let host = option.series.find(s => s && Array.isArray(s.data) && !PROJ_HELPER_RE.test(String(s.name || '')));
+            if (host) {
+                let startLabel = labels[firstIdx], endLabel = labels[labels.length - 1];
+                host.markLine = Object.assign({}, host.markLine || {}, {
+                    silent: true, symbol: 'none', animation: false,
+                    label: { show: true, formatter: isEn ? 'Forecast' : '预测', position: 'insideEndTop', rotate: 0, color: '#6B7280', fontSize: 11, fontFamily: PROJ_FONT },
+                    lineStyle: { type: 'dashed', color: '#9CA3AF', width: 1 },
+                    data: [{ xAxis: startLabel }]
+                });
+                host.markArea = Object.assign({}, host.markArea || {}, {
+                    silent: true, animation: false,
+                    itemStyle: { color: 'rgba(120,0,0,0.035)' },
+                    data: [[{ xAxis: startLabel }, { xAxis: endLabel }]]
+                });
+            }
+        }
+        return option;
+    }
+
+    /* ==================== bak145：阶段 1 流向类图表（无地理边界 / 无外部依赖） ====================
+       三种类型共用「维度列 + 数值列」契约：
+         flow-matrix：X=来源，系列维度=目的地，Y=流量 → 热力矩阵
+         flow-sankey：X=阶段1，系列维度=阶段2，新增阶段3/4 → 三层以上多阶段桑基（自动守恒）
+         bubble：X=区域，Y=度量，新增大小度量 → 气泡式区域对比
+       所有标签都用「逐数据项静态字符串 formatter」，不写函数 —— 嵌入页 plainJson 剥函数后
+       数值标签依然完整；图例按用户既有偏好一律单系列隐藏。 */
+    const FLOW_FONT = PROJ_FONT;
+    const FLOW_HEAT_RAMP = ['#FAE6A5', '#F8DA75', '#F6CD45', '#F1B844', '#ECA342', '#E1783E', '#B23E19', '#780000'];
+    const FLOW_STAGE_COLORS = ['#780000', '#E1783E', '#ECA342', '#F6CD45', '#2EC4B6', '#3A86EF'];
+    let lastFlowConservationDev = 0;
+    function isFlowChartType(type) {
+        return type === 'flow-matrix' || type === 'flow-sankey' || type === 'bubble';
+    }
+    function flowRowVal(row, field, isEn) {
+        if (!row || !field) return null;
+        let v = row[field];
+        if (v === null || v === undefined || v === '') return null;
+        let n = Number(v);
+        if (isNaN(n)) return null;
+        if (isEn) { try { n /= enUnitDivisor(field); } catch (e) {} }
+        return n;
+    }
+    function flowDisp(v, isEn) {
+        return getMappedValue(String(v == null ? '' : v).trim(), isEn ? 'en' : 'zh');
+    }
+    function flowDistinct(rows, field) {
+        let seen = {}, out = [];
+        (rows || []).forEach(r => {
+            let v = String(r[field] == null ? '' : r[field]).trim();
+            if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+        });
+        return out;
+    }
+    function flowUnitGraphic(unitName, isEn) {
+        if (!unitName) return [];
+        return [{ type: 'text', left: 8, top: 8, silent: true,
+            style: { text: (isEn ? 'Unit: ' : '单位: ') + unitName, fontSize: 11, fill: '#6B7280', fontFamily: FLOW_FONT } }];
+    }
+    function flowFinish(chart, config, opt) {
+        opt.legend = Object.assign({}, opt.legend || {}, { show: false });
+        try { lastRenderedChartOption[config.id] = opt; lastRenderedChartId = config.id; } catch (e) {}
+        chart.setOption(opt, true);
+    }
+    function flowEmptyNotice(chart, config, text) {
+        flowFinish(chart, config, {
+            backgroundColor: 'transparent', tooltip: { show: false },
+            graphic: [{ type: 'text', left: 'center', top: 'middle', silent: true,
+                style: { text: text, fontSize: 13, fill: '#9CA3AF', textAlign: 'center', lineHeight: 20, width: 420, fontFamily: FLOW_FONT } }]
+        });
+    }
+    function renderFlowMatrix(chart, config, rows, isEn, unitName) {
+        let f1 = config.xField, f2 = config.subField || config.flowStage3 || '', vf = config.yField;
+        if (!f1 || !f2 || !vf) {
+            flowEmptyNotice(chart, config, isEn ? 'Pick a source field and a destination field for the flow matrix.' : '请在编辑器里选择「来源字段」与「目的地字段」。');
+            return;
+        }
+        let s1 = [], s2 = [], map = {}, seen1 = {}, seen2 = {};
+        rows.forEach(r => {
+            let a = getXValue(r, f1);
+            let b = String(r[f2] == null ? '' : r[f2]).trim();
+            let v = flowRowVal(r, vf, isEn);
+            if (!a || !b || v === null) return;
+            if (!seen1[a]) { seen1[a] = 1; s1.push(a); }
+            if (!seen2[b]) { seen2[b] = 1; s2.push(b); }
+            let key = a + '\u0001' + b;
+            if (!map[key]) map[key] = { a: a, b: b, v: 0 };
+            map[key].v += v;
+        });
+        if (!s1.length || !s2.length) { flowEmptyNotice(chart, config, isEn ? 'No flow records found.' : '没有可用的流向记录。'); return; }
+        let i1 = {}, i2 = {};
+        s1.forEach((v, i) => { i1[v] = i; }); s2.forEach((v, i) => { i2[v] = i; });
+        let maxV = 0;
+        Object.keys(map).forEach(k => { maxV = Math.max(maxV, map[k].v); });
+        let data = Object.keys(map).map(k => {
+            let o = map[k];
+            // 暖色阶越深底越暗，深格用白字，保证数值始终可读（浅格仍用深色字）
+            let fg = (maxV > 0 && o.v / maxV > 0.55) ? '#FFFFFF' : '#111827';
+            let name = flowDisp(o.a, isEn) + ' → ' + flowDisp(o.b, isEn) + '   ' + formatChartNumber(o.v);
+            return { name: name, value: [i1[o.a], i2[o.b], o.v],
+                label: { show: true, formatter: formatChartNumber(o.v), fontSize: 11, color: fg, fontFamily: FLOW_FONT },
+                tooltip: { formatter: '{b}' } };
+        });
+        let xRot = s1.some(a => flowDisp(a, isEn).length > 5) ? 30 : 0;
+        flowFinish(chart, config, {
+            backgroundColor: 'transparent',
+            textStyle: { fontFamily: FLOW_FONT, fontSize: 12, color: '#374151' },
+            tooltip: { trigger: 'item', confine: true },
+            legend: { show: false },
+            grid: { left: 110, right: 96, top: 52, bottom: xRot ? 76 : 48, containLabel: false },
+            xAxis: { type: 'category', data: s1.map(v => flowDisp(v, isEn)),
+                axisLabel: { fontSize: 12, color: '#374151', fontFamily: FLOW_FONT, interval: 0, hideOverlap: false, rotate: xRot },
+                axisTick: { show: false }, axisLine: { lineStyle: { color: '#D1D5DB' } } },
+            yAxis: { type: 'category', data: s2.map(v => flowDisp(v, isEn)),
+                axisLabel: { fontSize: 12, color: '#374151', fontFamily: FLOW_FONT, interval: 0, hideOverlap: false },
+                axisTick: { show: false }, axisLine: { lineStyle: { color: '#D1D5DB' } } },
+            visualMap: { min: 0, max: maxV || 1, calculable: false, orient: 'vertical', right: 8, top: 'middle',
+                itemWidth: 12, itemHeight: 120, inRange: { color: FLOW_HEAT_RAMP },
+                textStyle: { fontSize: 11, color: '#6B7280', fontFamily: FLOW_FONT } },
+            series: [{ type: 'heatmap', name: flowDisp(vf, isEn), data: data,
+                label: { show: false }, itemStyle: { borderColor: '#FFFFFF', borderWidth: 1 },
+                emphasis: { itemStyle: { borderColor: '#780000', borderWidth: 2 } },
+                tooltip: { formatter: '{b}' } }],
+            graphic: flowUnitGraphic(unitName, isEn)
+        });
+    }
+    function renderFlowSankey(chart, config, rows, isEn, unitName) {
+        let stages = [config.xField, config.subField, config.flowStage3, config.flowStage4].filter(v => v && String(v).trim());
+        let vf = config.yField;
+        if (stages.length < 2 || !vf) {
+            flowEmptyNotice(chart, config, isEn ? 'Pick at least two stage fields and a flow value.' : '请至少选择两个阶段字段与一个流量数值字段。');
+            return;
+        }
+        let stageVals = stages.map(f => flowDistinct(rows, f));
+        if (stageVals.some(a => !a.length)) { flowEmptyNotice(chart, config, isEn ? 'No flow records found.' : '没有可用的流向记录。'); return; }
+        let registry = {}, keyMap = {}, nodeStage = {};
+        stageVals.forEach((vals, si) => vals.forEach(v => {
+            let label = flowDisp(v, isEn);
+            let nm = label;
+            if (registry[nm]) {
+                nm = label + ' (S' + (si + 1) + ')';
+                let q = 1;
+                while (registry[nm]) { q++; nm = label + ' (S' + (si + 1) + ')' + q; }
+            }
+            registry[nm] = 1;
+            keyMap[si + '\u0001' + v] = nm;
+            nodeStage[nm] = si;
+        }));
+        let nodeTotals = {};
+        rows.forEach(r => {
+            let v = flowRowVal(r, vf, isEn);
+            if (v === null) return;
+            stages.forEach((f, si) => {
+                let raw = String(r[f] == null ? '' : r[f]).trim();
+                let nm = raw ? keyMap[si + '\u0001' + raw] : null;
+                if (nm) nodeTotals[nm] = (nodeTotals[nm] || 0) + v;
+            });
+        });
+        let nodes = [];
+        stageVals.forEach((vals, si) => vals.forEach(v => {
+            let nm = keyMap[si + '\u0001' + v];
+            nodes.push({ name: nm,
+                label: { formatter: flowDisp(v, isEn) + '  ' + formatChartNumber(nodeTotals[nm] || 0), fontSize: 11, color: '#111827', fontFamily: FLOW_FONT },
+                itemStyle: { color: FLOW_STAGE_COLORS[si % FLOW_STAGE_COLORS.length], borderColor: '#FFFFFF', borderWidth: 1 } });
+        }));
+        let pairs = {};
+        rows.forEach(r => {
+            let v = flowRowVal(r, vf, isEn);
+            if (v === null || v <= 0) return;
+            for (let si = 0; si < stages.length - 1; si++) {
+                let a = String(r[stages[si]] == null ? '' : r[stages[si]]).trim();
+                let b = String(r[stages[si + 1]] == null ? '' : r[stages[si + 1]]).trim();
+                if (!a || !b) continue;
+                let ka = keyMap[si + '\u0001' + a], kb = keyMap[(si + 1) + '\u0001' + b];
+                if (!ka || !kb) continue;
+                let key = si + '\u0001' + ka + '\u0001' + kb;
+                if (!pairs[key]) pairs[key] = { si: si, source: ka, target: kb, v: 0 };
+                pairs[key].v += v;
+            }
+        });
+        let links = Object.keys(pairs).map(k => {
+            let o = pairs[k];
+            return { source: o.source, target: o.target, value: o.v,
+                lineStyle: { color: FLOW_STAGE_COLORS[o.si % FLOW_STAGE_COLORS.length], opacity: 0.42 } };
+        });
+        if (!links.length) { flowEmptyNotice(chart, config, isEn ? 'No flow links found.' : '没有可用的流量连线。'); return; }
+        let inflow = {}, outflow = {};
+        links.forEach(l => { outflow[l.source] = (outflow[l.source] || 0) + l.value; inflow[l.target] = (inflow[l.target] || 0) + l.value; });
+        lastFlowConservationDev = 0;
+        window.__flowConservationDev = 0;
+        window.__flowStageCount = stages.length;
+        nodes.forEach(n => {
+            let si = nodeStage[n.name];
+            if (si <= 0 || si >= stages.length - 1) return;
+            let a = inflow[n.name] || 0, b = outflow[n.name] || 0;
+            let dev = Math.abs(a - b) / (Math.max(a, b) || 1);
+            lastFlowConservationDev = Math.max(lastFlowConservationDev, dev);
+        });
+        window.__flowConservationDev = lastFlowConservationDev;
+        let graphic = flowUnitGraphic(unitName, isEn);
+        if (lastFlowConservationDev > 0.01) {
+            graphic.push({ type: 'text', left: 8, bottom: 6, silent: true,
+                style: { text: (isEn ? 'Flow imbalance ' : '流向不守恒 ') + (lastFlowConservationDev * 100).toFixed(1) + '%', fontSize: 11, fill: '#780000', fontFamily: FLOW_FONT } });
+        }
+        flowFinish(chart, config, {
+            backgroundColor: 'transparent',
+            textStyle: { fontFamily: FLOW_FONT, fontSize: 12, color: '#374151' },
+            tooltip: { trigger: 'item', confine: true },
+            legend: { show: false },
+            series: [{ type: 'sankey', name: flowDisp(vf, isEn), data: nodes, links: links,
+                left: 16, right: 132, top: 52, bottom: 36,
+                nodeWidth: 14, nodeGap: 12, nodeAlign: 'justify', layoutIterations: 32,
+                draggable: false, emphasis: { focus: 'adjacency' },
+                label: { show: true, fontSize: 11, color: '#111827', fontFamily: FLOW_FONT },
+                lineStyle: { color: 'source', curveness: 0.45, opacity: 0.42 },
+                itemStyle: { borderWidth: 1, borderColor: '#FFFFFF' } }],
+            graphic: graphic
+        });
+    }
+    function renderBubbleCompare(chart, config, rows, isEn, unitName) {
+        let xf = config.xField, vf = config.yField, sf = config.bubbleSizeField || vf;
+        if (!xf || !vf) { flowEmptyNotice(chart, config, isEn ? 'Pick a region field and a measure.' : '请选择区域字段与度量字段。'); return; }
+        let cats = [], agg = {}, sizeAgg = {};
+        rows.forEach(r => {
+            let k = getXValue(r, xf);
+            if (!k) return;
+            let v = flowRowVal(r, vf, isEn);
+            let sv = flowRowVal(r, sf, isEn);
+            if (v === null) return;
+            if (!agg[k]) { agg[k] = 0; sizeAgg[k] = 0; cats.push(k); }
+            agg[k] += v;
+            if (sv !== null) sizeAgg[k] += sv;
+        });
+        if (!cats.length) { flowEmptyNotice(chart, config, isEn ? 'No region data found.' : '没有可用的区域数据。'); return; }
+        let sizeVals = cats.map(k => Math.abs(sizeAgg[k] || 0));
+        let maxSize = Math.max.apply(null, sizeVals.concat([1]));
+        let minSize = Math.min.apply(null, sizeVals);
+        let sizeSpan = maxSize - minSize;
+        let data = cats.map((k, i) => {
+            let label = flowDisp(k, isEn);
+            // 极差归一化：数值相近时也能拉开气泡差异（否则全都挤在最大档附近看不出大小）
+            let t = sizeSpan > 0 ? (Math.abs(sizeAgg[k] || 0) - minSize) / sizeSpan : 0.5;
+            let v = agg[k], sz = 16 + 40 * Math.sqrt(t);
+            let name = label + '  ' + formatChartNumber(v);
+            return { name: name, value: [i, v], symbolSize: Math.round(sz),
+                itemStyle: { color: SXCOAL_R11[(i * 3) % SXCOAL_R11.length], opacity: 0.82, borderColor: '#FFFFFF', borderWidth: 1 },
+                label: { show: true, position: 'top', formatter: label, fontSize: 11, color: '#374151', fontFamily: FLOW_FONT },
+                tooltip: { formatter: '{b}' } };
+        });
+        let xRot = cats.some(k => flowDisp(k, isEn).length > 4) ? 30 : 0;
+        flowFinish(chart, config, {
+            backgroundColor: 'transparent',
+            textStyle: { fontFamily: FLOW_FONT, fontSize: 12, color: '#374151' },
+            tooltip: { trigger: 'item', confine: true },
+            legend: { show: false },
+            grid: { left: 64, right: 40, top: 52, bottom: xRot ? 76 : 48, containLabel: false },
+            xAxis: { type: 'category', data: cats.map(k => flowDisp(k, isEn)),
+                axisLabel: { fontSize: 12, color: '#374151', fontFamily: FLOW_FONT, interval: 0, hideOverlap: false, rotate: xRot },
+                axisTick: { show: false }, axisLine: { lineStyle: { color: '#D1D5DB' } } },
+            yAxis: { type: 'value', name: unitName || '', nameLocation: 'end', nameGap: 16,
+                nameTextStyle: { fontSize: 11, color: '#6B7280', align: 'left', fontFamily: FLOW_FONT },
+                axisLabel: { fontSize: 12, color: '#374151', fontFamily: FLOW_FONT },
+                splitLine: { lineStyle: { color: '#EEF0F3' } } },
+            series: [{ type: 'scatter', name: flowDisp(vf, isEn), data: data, label: { show: false },
+                tooltip: { formatter: '{b}' }, emphasis: { scale: 1.08 } }],
+            graphic: []
+        });
+    }
+    function renderFlowChart(chart, config, ctx) {
+        let isEn = !!ctx.isEn;
+        let rows = (ctx.chartData || ctx.scopedData || []).filter(r => r && !isTotalRow(r));
+        let unitName = '';
+        try { unitName = extractPureUnit(config.yField, isEn) || ''; } catch (e) {}
+        if (config.type === 'flow-matrix') renderFlowMatrix(chart, config, rows, isEn, unitName);
+        else if (config.type === 'flow-sankey') renderFlowSankey(chart, config, rows, isEn, unitName);
+        else if (config.type === 'bubble') renderBubbleCompare(chart, config, rows, isEn, unitName);
+    }
+
     function updateEChartsInstance(chart, config) {
         upgradeLegacyChartConfig(config);
         let isTopN = config.topN !== undefined && config.topN > 0;
@@ -7412,6 +7851,13 @@
                 let sortVal = dRow[sortInfo.sortCol];
                 if (dispVal) xSortValues[dispVal] = sortVal;
             });
+        }
+
+        // bak145：阶段 1 流向类图表（流向矩阵 / 多阶段桑基 / 气泡对比）短路分派，
+        // 与既有分析图一样自建完整 option，不进主链路（主链路按笛卡尔柱/折/饼假设系列数据）。
+        if (isFlowChartType(config.type)) {
+            renderFlowChart(chart, config, { scopedData: scopedData, baseData: baseData, filteredData: filteredData, chartData: chartData, calcOpts: calcOpts, isEn: isEn, dateColumn: dateColumn });
+            return;
         }
 
         // 第九十轮：分析类图表（帕累托 / 变化贡献帕累托 / 增减双向 / 瀑布）短路返回，
@@ -8478,16 +8924,28 @@
                 // 估宽才能与实际渲染的刻度文本一致（第十一轮 image1：英文单位左移过量）
                 let y2a = hasY2 ? option.yAxis[1] : null;
                 if (y2a && y2a.axisLabel && typeof y2a.axisLabel.formatter === 'function') fmtR = y2a.axisLabel.formatter;
-                // 次轴（右轴）单位名可能比刻度标签还长（如 "美元/吨" / "USD/t"），
-                // 右侧留白同时满足刻度标签与单位名，确保单位名完整显示、不被画布右缘裁切。
-                let unitW2 = (y2a && y2a.name) ? measureTextPx(y2a.name, 11) : 0;
+                // 次轴（右轴）单位名可能比刻度标签还长（如 "Mln Yuan" / "USD mn per tonne"），
+                // 右侧留白同时满足刻度标签与单位名。单位名横排画在轴线右侧
+                // （applyYAxisUnitNameLayout: align:'left' + padding[3]=8），所需留白 =
+                // 8(padding) + 文字实宽 + 12(右缘呼吸)。文字按 ECharts 实际字体族量：
+                // axis.name 未指定 fontFamily 时用默认 'sans-serif'，网页字体栈会低估约 4px，
+                // 长单位收尾字母会被画布右缘裁掉（复制图已修，英文仪表盘/放大/横屏同一根因）。
+                let unitW2 = 0;
+                if (y2a && y2a.name) {
+                    let unitFs = (y2a.nameTextStyle && y2a.nameTextStyle.fontSize) || 11;
+                    let unitFam = (y2a.nameTextStyle && y2a.nameTextStyle.fontFamily) || 'sans-serif';
+                    unitW2 = measureTextPx(y2a.name, unitFs, unitFam);
+                }
                 // 刻度标签按 ECharts 实际渲染族/号估宽（默认 'sans-serif' 12px），10 = 8px 边距 + 2px 呼吸，
                 // 避免 "35,000" 这类 6 字符英文刻度被画布右缘裁成 "35,00"（用户反馈）
+                let unitNeed = hasY2 ? 20 + unitW2 : 0;
                 let rightNeed = hasY2
-                    ? Math.max(10 + estimateYAxisLabelWidth(collectYAxisSeriesValues(option, 1), 12, fmtR, 'sans-serif'), 12 + unitW2)
+                    ? Math.max(10 + estimateYAxisLabelWidth(collectYAxisSeriesValues(option, 1), 12, fmtR, 'sans-serif'), unitNeed)
                     : 32;
-                // 无次轴时固定 32（用户偏好：左右空白不要太大）；有次轴时按需加宽（上限 140）
-                let newRight = hasY2 ? Math.min(140, Math.max(32, Math.ceil(rightNeed))) : 32;
+                // 无次轴时固定 32（用户偏好：左右空白不要太大）；有次轴时按需加宽。
+                // 上限 140 只钳刻度标签需求，单位名需求本身不被钳（超长单位也必须完整显示）。
+                let rightCap = hasY2 ? Math.max(140, Math.ceil(unitNeed)) : 140;
+                let newRight = hasY2 ? Math.min(rightCap, Math.max(32, Math.ceil(rightNeed))) : 32;
                 if (Array.isArray(option.grid)) option.grid[0].right = newRight;
                 else option.grid.right = newRight;
             }
@@ -8514,6 +8972,11 @@
 
         // 窄屏放不下默认外侧标签时只缩小饼半径（标签/引导线保持默认；放得下时等于没改）
         try { applyPieRadiusShrink(option, chart.getDom ? chart.getDom() : null); } catch (e) {}
+
+        // bak145：分析师录入的预测/预判值表达（只改写 option，不新增 UI、不做历史外推）。
+        // 放在 normalizeLegendDisplay 之后 → 图例 data 仍按原系列计算，虚线段沿用同一 name
+        // 不产生多余图例项；放在 option 缓存之前 → 放大/横屏/下载/复制/嵌入页全部继承。
+        try { applyProjectionStyle(option, config, chartData, xDataKeys); } catch (e) { console.warn('预测值表达失败', e); }
 
         // 缓存最近一次渲染的 option，作为 generateChartEmbedCode 的兜底
         // （让复制嵌入代码不依赖 ECharts 实例仍在内存中）
@@ -8989,6 +9452,36 @@
 
     function toggleChartFields() {
         let type = document.getElementById('chartTypeSel').value;
+        // bak145：阶段 1 流向类图表 —— 阶段字段 / 气泡度量显隐，并把 X/Y/系列维度标签改成流向口径
+        let isFlowType = isFlowChartType(type);
+        let isEnUI = (window.currentLang === 'en');
+        let flowRow = document.getElementById('flowFieldsRow');
+        if (flowRow) {
+            flowRow.style.display = isFlowType ? 'flex' : 'none';
+            let g3 = document.getElementById('flowStage3Group'), g4 = document.getElementById('flowStage4Group'), gsz = document.getElementById('bubbleSizeGroup');
+            if (g3) g3.style.display = (type === 'flow-sankey') ? 'block' : 'none';
+            if (g4) g4.style.display = (type === 'flow-sankey') ? 'block' : 'none';
+            if (gsz) gsz.style.display = (type === 'bubble') ? 'block' : 'none';
+            let l3 = document.getElementById('flowStage3Label'), l4 = document.getElementById('flowStage4Label'), lsz = document.getElementById('bubbleSizeLabel');
+            if (l3) l3.textContent = isEnUI ? 'Stage 3 field' : '第 3 阶段字段';
+            if (l4) l4.textContent = isEnUI ? 'Stage 4 field (optional)' : '第 4 阶段字段 (可选)';
+            if (lsz) lsz.textContent = isEnUI ? 'Bubble size (optional)' : '气泡大小度量 (可选)';
+            let hint = document.getElementById('flowFieldsHint');
+            if (hint) {
+                if (type === 'flow-matrix') hint.textContent = isEnUI
+                    ? 'X field = source, series dimension = destination, Y measure = flow value. Cell colour and number both encode volume.'
+                    : 'X 轴字段 = 来源，系列/对比维度 = 目的地，Y 主度量 = 流量值；单元格颜色与数字同时表示流量。';
+                else if (type === 'flow-sankey') hint.textContent = isEnUI
+                    ? 'Stage 1 = X field, stage 2 = series dimension, stages 3/4 above. Inflow = outflow at every intermediate stage; colour = stage, band width = volume.'
+                    : '阶段 1 = X 轴字段，阶段 2 = 系列/对比维度，阶段 3/4 在上方选择。中间各层流入=流出自动守恒；颜色按阶段区分，带宽按流量。';
+                else if (type === 'bubble') hint.textContent = isEnUI
+                    ? 'X field = region, Y measure = vertical value, bubble size defaults to Y measure or pick another field.'
+                    : 'X 轴字段 = 区域，Y 主度量 = 纵向数值；气泡大小默认与 Y 主度量一致，也可另选。';
+                else hint.textContent = '';
+            }
+        }
+        let analyticsGroup = document.getElementById('analyticsGroup');
+        if (analyticsGroup) analyticsGroup.style.display = isFlowType ? 'none' : '';
         document.getElementById('chartY2Group').style.display = (type === 'combo') ? 'block' : 'none';
         // 2026-10-15：次度量自定义名称输入组与 Y2 下拉同显隐（仅组合图有次度量）
         let y2NameGrp = document.getElementById('chartY2NameGroup');
@@ -8996,8 +9489,14 @@
         // 系列/堆叠维度在柱状图、条形图、折线图、面积图、组合图、季节图中均可用
         // 分析类图表（帕累托/瀑布/增减双向）为单系列按 X 维度聚合，不需要「系列/对比维度」
         let isAnalysisType = (type === 'pareto' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado' || type === 'waterfall');
-        let hasSub = (type.includes('bar') || type.includes('horizontal') || type === 'line' || type.includes('area') || type === 'combo' || type === 'seasonal-lines') && !isAnalysisType;
+        let hasSub = ((type.includes('bar') || type.includes('horizontal') || type === 'line' || type.includes('area') || type === 'combo' || type === 'seasonal-lines') && !isAnalysisType)
+            || type === 'flow-matrix' || type === 'flow-sankey';
         document.getElementById('chartSubGroup').style.display = hasSub ? 'block' : 'none';
+        // bak145：流向图里「系列/对比维度」其实是第 2 阶段 / 目的地，不用通用文案
+        let subLbl = document.querySelector('#chartSubGroup > label');
+        if (subLbl) subLbl.textContent = (type === 'flow-matrix' || type === 'flow-sankey')
+            ? (isEnUI ? 'Stage 2 / destination field' : '阶段 2 / 目的地字段')
+            : (isEnUI ? 'Series / comparison dimension (optional)' : '系列 / 对比维度 (可选)');
         // 对比期（变化基准）仅 waterfall / 变化贡献帕累托(含净贡献) / 增减双向条形 需要；帕累托图用当期值，不需要
         let ptGrp = document.getElementById('chartPeriodTypeGroup');
         if (ptGrp) ptGrp.style.display = (type === 'waterfall' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado') ? 'block' : 'none';
@@ -9013,7 +9512,7 @@
         // 系列/对比维度说明：告诉用户选了之后会「每个取值一条系列」，可实现不同月份 / 年份 / 品种对比
         let subHint = document.getElementById('chartSubHint');
         if (subHint) {
-            if (!hasSub) {
+            if (!hasSub || isFlowType) {
                 subHint.style.display = 'none';
             } else {
                 let subSel = document.getElementById('chartSubSel');
@@ -9035,7 +9534,14 @@
         // 季节图：折线图 + X 轴为可循环周期 + 系列维度为年份，给出用法提示并锁定聚合模式
         syncSeasonalHint();
         // 横向条形图：分类维度实际在 Y 轴，度量值实际在 X 轴，标签需反向提示
-        if (type.includes('horizontal')) {
+        if (isFlowType) {
+            document.getElementById('chartXLabel').textContent = (type === 'bubble')
+                ? (isEnUI ? 'Region field' : '区域字段')
+                : (type === 'flow-matrix' ? (isEnUI ? 'Source field' : '来源字段') : (isEnUI ? 'Stage 1 field' : '阶段 1 字段'));
+            document.getElementById('chartYLabel').textContent = (type === 'bubble')
+                ? (isEnUI ? 'Y value' : 'Y 轴数值')
+                : (isEnUI ? 'Flow value' : '流量 / 数值字段');
+        } else if (type.includes('horizontal')) {
             document.getElementById('chartXLabel').textContent = '分类维度 (Y 轴)';
             document.getElementById('chartYLabel').textContent = '度量值 (X 轴)';
         } else {
@@ -9358,7 +9864,13 @@ function applyChartAnalyticsI18N() {
         let set = new Set();
         (modelRelationships || []).forEach(r => {
             if (!r) return;
-            (r.enCols || []).forEach(col => { if (col) set.add(col); });
+            // 「中英通用」配对（zh === en，如 日期↔日期 / 季度名称↔季度名称 / 年季名称↔年季名称 / 天数↔天数）
+            // 不是英文翻译列：applyModelRelationships 会把 p.en 无条件写进 enCols，若照单全收，
+            // 这些中文时间维度会被 isInternalLangField() 当成内部字段，从 X 轴 / 切片器 / 系列维度下拉里整体消失
+            // （表现为映射里勾了「显示」，X 轴却只剩 类别/项目/年份名称/月份名称/年月名称）。
+            // 以「同一关系里作为中文显示列出现过的列名」做排除，同时兼容旧模板里已被污染的 enCols。
+            let zhSet = new Set((r.pairs || []).map(p => p && p.zh).filter(Boolean));
+            (r.enCols || []).forEach(col => { if (col && !zhSet.has(col)) set.add(col); });
             // pairs[].en 同样是英文翻译列来源：旧模板或裁剪过的配置里可能只有 pairs 而没有 enCols，
             // 漏掉会让 Province / Month 这类英文列混进中文的 X 轴下拉。
             // 只在"同一行同时存在中文列"时才判为翻译列，避免纯英文数据集被整体过滤。
@@ -10893,6 +11405,7 @@ function applyChartAnalyticsI18N() {
         document.getElementById('chartSourceZh').value = ''; document.getElementById('chartSourceEn').value = '';
         // 2026-10-15：新建图表时清空度量自定义显示名
         ['chartYNameZh', 'chartYNameEn', 'chartY2NameZh', 'chartY2NameEn'].forEach(n => { let el = document.getElementById(n); if (el) el.value = ''; });
+        ['chartFlowStage3Sel', 'chartFlowStage4Sel', 'chartBubbleSizeSel'].forEach(n => { let el = document.getElementById(n); if (el) el.value = ''; });
         document.getElementById('chartLocalFilters').innerHTML = '';
         document.getElementById('chartTimeScopeSel').value = 'all';
         document.getElementById('chartTargetValue').value = '';
@@ -10920,6 +11433,11 @@ function applyChartAnalyticsI18N() {
         toggleChartFields();
         document.getElementById('chartSubSel').value = c.subField ? c.subField : "";
         document.getElementById('chartYSel').value = c.yField; if(c.yField2) document.getElementById('chartY2Sel').value = c.yField2;
+        // bak145：流向图表的额外字段回填
+        (function () {
+            let m = { chartFlowStage3Sel: c.flowStage3, chartFlowStage4Sel: c.flowStage4, chartBubbleSizeSel: c.bubbleSizeField };
+            Object.keys(m).forEach(n => { let el = document.getElementById(n); if (el) el.value = m[n] || ''; });
+        })();
         // 2026-10-15：回填度量自定义显示名（留空表示用默认）
         (function () {
             let m = { chartYNameZh: c.yNameZh, chartYNameEn: c.yNameEn, chartY2NameZh: c.y2NameZh, chartY2NameEn: c.y2NameEn };
@@ -10991,6 +11509,10 @@ function applyChartAnalyticsI18N() {
             y2NameZh: (function () { let el = document.getElementById('chartY2NameZh'); return el ? (el.value || '').trim() : ''; })(),
             y2NameEn: (function () { let el = document.getElementById('chartY2NameEn'); return el ? (el.value || '').trim() : ''; })(),
             yField2: type === 'combo' ? document.getElementById('chartY2Sel').value : null, timeScope: document.getElementById('chartTimeScopeSel').value,
+            // bak145：阶段 1 流向图表的额外字段（非流向类型为 null，不改动既有配置语义）
+            flowStage3: (function () { let el = document.getElementById('chartFlowStage3Sel'); return el ? (el.value || null) : null; })(),
+            flowStage4: (function () { let el = document.getElementById('chartFlowStage4Sel'); return el ? (el.value || null) : null; })(),
+            bubbleSizeField: (function () { let el = document.getElementById('chartBubbleSizeSel'); return el ? (el.value || null) : null; })(),
             periodType: (function () { let el = document.getElementById('chartPeriodTypeSel'); return el ? (el.value || 'yoy') : 'yoy'; })(),
             customStart: document.getElementById('chartCustomStart').value, customEnd: document.getElementById('chartCustomEnd').value,
             analytics: (function() {
@@ -11762,8 +12284,12 @@ function applyChartAnalyticsI18N() {
                         let m = computeAnalysisMargins(curOpt, 12, 30, 12, 10);
                         ovBottom = m.bottom; ovLeft = m.left; ovContain = false;
                     }
+                    // 右侧不能一律回到 ovLeft(=chartLeftEdge)：主链路已按 Y2 单位名/刻度实宽
+                    // 算出 grid.right（英文长单位如 "Mln Yuan" 需要 60+px），这里覆盖成 48 会把
+                    // 单位名收尾字母裁掉（用户反馈：英文版仪表盘、放大、横屏显示不全）。
+                    let ovRightEdge = Math.max(chartRightEdge, ovLeft);
                     curOpt.grid = (Array.isArray(curOpt.grid) ? curOpt.grid.map(g => {
-                        return Object.assign({}, g, { top: bodyTop, bottom: ovBottom, left: ovLeft, right: ovLeft, containLabel: ovContain });
+                        return Object.assign({}, g, { top: bodyTop, bottom: ovBottom, left: ovLeft, right: ovRightEdge, containLabel: ovContain });
                     }) : curOpt.grid);
                     curOpt.title = (Array.isArray(curOpt.title) ? curOpt.title.map(t => Object.assign({}, t, { show: false, text: '' })) : [{ show: false, text: '' }]);
                     delete curOpt.subtitle;
@@ -11986,7 +12512,12 @@ function applyChartAnalyticsI18N() {
                     // 钳制：单位左缘不越出画布
                     let axisX = (Array.isArray(opt.grid) && opt.grid[0] && typeof opt.grid[0].left === 'number') ? opt.grid[0].left : 48;
                     labelW = Math.min(labelW, Math.max(0, axisX - 10));
-                    if (isRight) dlY2UnitNeed = Math.max(dlY2UnitNeed, 12 + measureTextPx(ya.name, 10));
+                    // 次轴单位名横排画在轴线右侧（align:'left' + padding[3]=8），所需右留白 =
+                    // 8(padding) + 文字实宽 + 12(右缘呼吸)。文字按 ECharts 实际字体族量：
+                    // 网页字体栈会低估约 4px，且 ECharts 画布渲染长串时还会再宽 2~4px，
+                    // 否则 "RMB mn" 的收尾字母 / "RMB mn (million)" 的右括号会被裁掉。
+                    if (isRight) dlY2UnitNeed = Math.max(dlY2UnitNeed,
+                        20 + measureTextPx(ya.name, 10, (ya.nameTextStyle && ya.nameTextStyle.fontFamily) || 'sans-serif'));
                     ya.nameLocation = 'end';
                     ya.nameGap = 16;
                     ya.nameTextStyle = Object.assign({}, ya.nameTextStyle || {}, { fontSize: 10, color: '#4B5563', align: 'left', verticalAlign: 'top', padding: [0, 0, 0, isRight ? 8 : -(8 + labelW)] });
@@ -12776,7 +13307,7 @@ function generateChartEmbedCode(chartId) {
         // 次轴（右轴）单位名较长时（如 "美元/吨" / "USD/t"）按需加宽右侧留白，
         // 否则单位名会被画布右缘裁掉一部分（第十七轮用户反馈）。
         if (Array.isArray(opt.yAxis) && opt.yAxis.length > 1 && opt.yAxis[1] && opt.yAxis[1].name) {
-            let needR = 12 + measureTextPx(opt.yAxis[1].name, 13);
+            let needR = 20 + measureTextPx(opt.yAxis[1].name, 13);
             if (needR > embedGridRight) {
                 embedGridRight = needR;
                 if (Array.isArray(opt.grid) && opt.grid.length > 0) {
@@ -12839,6 +13370,9 @@ function generateChartEmbedCode(chartId) {
                     s.label.fontSize = 11;
                 }
                 s.tooltip = { valueFormatter: (v) => fmt2(v) };
+            } else if (s.type === 'heatmap' || s.type === 'sankey' || s.type === 'scatter') {
+                // bak145：流向类图表的数据项是 [x,y,value] / 节点链路 / 对象，不能套通用数值 fmt2
+                // （会把数组转成 NaN）。数值已烘进逐项静态字符串 label，tooltip 用 '{b}' 字符串模板。
             } else {
                 // 折线/柱/条等：统一 2 位小数 + 整点值
                 s.tooltip = Object.assign({}, s.tooltip || {}, { valueFormatter: (v) => fmt2(v) });
@@ -13149,6 +13683,10 @@ function applyFmt2(opt) {
       s.tooltip = Object.assign({}, s.tooltip || {}, { valueFormatter: fmt2 });
     } else if (s.type === 'pie') {
       s.tooltip = Object.assign({}, s.tooltip || {}, { valueFormatter: fmt2 });
+    } else if (s.type === 'heatmap' || s.type === 'scatter') {
+      s.tooltip = Object.assign({}, s.tooltip || {}, { formatter: '{b}' });
+    } else if (s.type === 'sankey') {
+      s.tooltip = Object.assign({}, s.tooltip || {}, { valueFormatter: fmt2 });
     } else {
       s.tooltip = Object.assign({}, s.tooltip || {}, { valueFormatter: fmt2 });
       if (s.label && s.label.show) {
@@ -13177,7 +13715,7 @@ function applyFmt2(opt) {
     });
   }
   if (Array.isArray(opt.yAxis) && opt.yAxis.length > 1 && opt.yAxis[1] && opt.yAxis[1].name) {
-    let needR = 12 + measureTextPx(opt.yAxis[1].name, 13);
+    let needR = 20 + measureTextPx(opt.yAxis[1].name, 13);
     // 刻度标签宽度也要纳入（嵌入页轴标签 14px 渲染，"35,000" 等 6 字符英文刻度
     // 只按单位名留白会被画布右缘裁掉最后一位 — 与主页面同一缺陷）。10 = 8px 边距 + 2px 呼吸。
     let tickFmtY2 = (opt.yAxis[1].axisLabel && typeof opt.yAxis[1].axisLabel.formatter === 'function') ? opt.yAxis[1].axisLabel.formatter : null;
@@ -13498,7 +14036,7 @@ function downloadChartPng(inZoom) {
             }
         } catch (e) {}
         if (Array.isArray(opt.yAxis) && opt.yAxis.length > 1 && opt.yAxis[1] && opt.yAxis[1].name) {
-          chartRightEdge = Math.max(chartRightEdge, 24 + measureTextPx(opt.yAxis[1].name, 18));
+          chartRightEdge = Math.max(chartRightEdge, 28 + measureTextPx(opt.yAxis[1].name, 18));
         }
         let legendWidth = w - chartLeftEdge - chartRightEdge;
         let estimateItemWidth = function (nm) {
