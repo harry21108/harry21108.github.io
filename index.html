@@ -997,6 +997,7 @@
                     <option value="bar-horizontal-clustered" data-page-node-id="42rSqWJWO48oyXRCpUf9i6">簇状条形图</option>
                     <option value="percent-bar-horizontal-stacked" data-page-node-id="zF1y6spFD46uL8H3CgBpU4">百分比堆积条形图</option>
                     <option value="combo" data-page-node-id="PHLD5AuA87n0FCJF92ZfY3">柱状图 + 折线图</option>
+                    <option value="area-line" data-page-node-id="aAreaLineCombo">面积图 + 折线图</option>
                     <option value="pie" data-page-node-id="RZQBxJbZMRkHvfsoNLVxPD">饼图 (占比展示)</option>
                     <option value="ring-pie" data-page-node-id="rzifRDCIFq8iOumykWicHG">环形饼图</option>
                     <option value="treemap" data-page-node-id="MNdVKxKFfBf4YVC5H7dTIX">树状矩形图</option>
@@ -3808,7 +3809,7 @@
             if (!config.periodType) config.periodType = 'yoy';
         }
         let t = config.type || '';
-        let isLineFamily = (t === 'line' || t.indexOf('area') >= 0 || t === 'combo');
+        let isLineFamily = (t === 'line' || t.indexOf('area') >= 0 || isComboChartType(t));
         if (isLineFamily && !config.subField && !isRateColumn(config.yField)) {
             (config.localFilters || []).forEach(f => {
                 if (!f) return;
@@ -6929,6 +6930,12 @@
     function isAnalysisChartType(type) {
         return type === 'pareto' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado' || type === 'waterfall';
     }
+    // 组合图族：主度量 + Y2 次度量（双 Y 轴，次度量恒为折线）。
+    // combo = 柱状 + 折线；area-line = 面积 + 折线。两者共用 Y2 字段、次轴单位换算、
+    // 虚拟指标、tooltip、模板字段与全部导出链路，只在主系列的绘制方式上分支。
+    function isComboChartType(type) {
+        return type === 'combo' || type === 'area-line';
+    }
     // bak144：分析图表「增减方向」术语 —— 不再写死「增产/减产」。
     // 旧实现中文恒为「增产/减产」，对销量、库存、价格等数据会说错话（英文 Increase/Decrease 本就中性）。
     // 现按 Y 字段名保守自适应，并可在「全局设置 → 变化方向术语」按字段覆盖；中英各一套，同一套 preset 键。
@@ -8656,7 +8663,14 @@
             mainName = getMetricDisplayNameOverride(config, 'y') || mainName;
             let seriesObj = { name: mainName, data: yData, connectNulls: connectNulls, symbol: 'none', showSymbol: false, symbolSize: 0 };
             if(config.type === 'line') { seriesObj.type = 'line'; seriesObj.legendIcon = 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z'; }
-            else if(config.type === 'combo') seriesObj.type = 'bar';
+            else if(isComboChartType(config.type)) {
+                if (config.type === 'area-line') {
+                    seriesObj.type = 'line';
+                    seriesObj.legendIcon = 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z';
+                    seriesObj.smooth = true;
+                    seriesObj.areaStyle = { opacity: 0.3 };
+                } else seriesObj.type = 'bar';
+            }
             else if(config.type.includes('bar')) seriesObj.type = 'bar';
             else if(isArea) {
                 seriesObj.type = 'line';
@@ -8692,7 +8706,7 @@
                 seriesList.push({ name: maName, type: 'line', data: maData, lineStyle: { type: 'dotted', width: 2 }, symbol: 'none', showSymbol: false, symbolSize: 0, connectNulls: false, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
             }
 
-            if(config.type === 'combo' && parseVirtualMetricValue(config.yField2)) {
+            if(isComboChartType(config.type) && parseVirtualMetricValue(config.yField2)) {
                 // 第三十五轮：Y2 = 自动计算的变化率 / 增减量（虚拟指标）——
                 // 数据里没有现成同环比列时，按 X 轴（时间）粒度逐点推算前一期再算变化率/增减量
                 let rm = parseVirtualMetricValue(config.yField2);
@@ -8771,7 +8785,7 @@
                     axisLabel: Object.assign({}, axisLabelConfig, { formatter: (v) => (v === null || v === undefined || isNaN(v)) ? '' : (Number(v).toFixed(1) + y2UnitTxt) })
                 });
                 seriesList.push({ name: y2Name, type: 'line', yAxisIndex: 1, data: finalY2Data, connectNulls: false, symbol: 'none', showSymbol: false, symbolSize: 0, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
-            } else if(config.type === 'combo') {
+            } else if(isComboChartType(config.type)) {
                 let rateType2 = /环比|mom/i.test(config.yField2 || '') ? 'mom' : 'yoy';
                 let isCumulative2 = config.timeScope === 'ytd' || /累计/.test(config.yField2 || '');
                 let finalY2Data = xData.map(x => {
@@ -8820,7 +8834,7 @@
             // 平均线/中位线/最大值线/最小值线自带显式颜色，不能占用槽位，否则会把真实系列挤成别的颜色。
             let paletteSlots = 1
                 + ((hasChartAnalytics(config, 'ma') && yData.length > maPeriods) ? 1 : 0)
-                + (config.type === 'combo' ? 1 : 0);
+                + (isComboChartType(config.type) ? 1 : 0);
             appendAnalyticsSeries(option, seriesList, config, histRangeMain, xData.length, yData, yData, xData, histOptsMain);
             option.color = getDynamicPalette(paletteSlots, 'line');
             option.series = seriesList;
@@ -9482,14 +9496,14 @@
         }
         let analyticsGroup = document.getElementById('analyticsGroup');
         if (analyticsGroup) analyticsGroup.style.display = isFlowType ? 'none' : '';
-        document.getElementById('chartY2Group').style.display = (type === 'combo') ? 'block' : 'none';
+        document.getElementById('chartY2Group').style.display = isComboChartType(type) ? 'block' : 'none';
         // 2026-10-15：次度量自定义名称输入组与 Y2 下拉同显隐（仅组合图有次度量）
         let y2NameGrp = document.getElementById('chartY2NameGroup');
-        if (y2NameGrp) y2NameGrp.style.display = (type === 'combo') ? 'block' : 'none';
+        if (y2NameGrp) y2NameGrp.style.display = isComboChartType(type) ? 'block' : 'none';
         // 系列/堆叠维度在柱状图、条形图、折线图、面积图、组合图、季节图中均可用
         // 分析类图表（帕累托/瀑布/增减双向）为单系列按 X 维度聚合，不需要「系列/对比维度」
         let isAnalysisType = (type === 'pareto' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado' || type === 'waterfall');
-        let hasSub = ((type.includes('bar') || type.includes('horizontal') || type === 'line' || type.includes('area') || type === 'combo' || type === 'seasonal-lines') && !isAnalysisType)
+        let hasSub = ((type.includes('bar') || type.includes('horizontal') || type === 'line' || type.includes('area') || isComboChartType(type) || type === 'seasonal-lines') && !isAnalysisType)
             || type === 'flow-matrix' || type === 'flow-sankey';
         document.getElementById('chartSubGroup').style.display = hasSub ? 'block' : 'none';
         // bak145：流向图里「系列/对比维度」其实是第 2 阶段 / 目的地，不用通用文案
@@ -11508,7 +11522,7 @@ function applyChartAnalyticsI18N() {
             yNameEn: (function () { let el = document.getElementById('chartYNameEn'); return el ? (el.value || '').trim() : ''; })(),
             y2NameZh: (function () { let el = document.getElementById('chartY2NameZh'); return el ? (el.value || '').trim() : ''; })(),
             y2NameEn: (function () { let el = document.getElementById('chartY2NameEn'); return el ? (el.value || '').trim() : ''; })(),
-            yField2: type === 'combo' ? document.getElementById('chartY2Sel').value : null, timeScope: document.getElementById('chartTimeScopeSel').value,
+            yField2: isComboChartType(type) ? document.getElementById('chartY2Sel').value : null, timeScope: document.getElementById('chartTimeScopeSel').value,
             // bak145：阶段 1 流向图表的额外字段（非流向类型为 null，不改动既有配置语义）
             flowStage3: (function () { let el = document.getElementById('chartFlowStage3Sel'); return el ? (el.value || null) : null; })(),
             flowStage4: (function () { let el = document.getElementById('chartFlowStage4Sel'); return el ? (el.value || null) : null; })(),
