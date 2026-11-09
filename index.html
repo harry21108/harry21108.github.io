@@ -8784,7 +8784,10 @@
                     type: 'value', name: y2UnitTxt, min: niceMin2r, splitLine: { show: false },
                     axisLabel: Object.assign({}, axisLabelConfig, { formatter: (v) => (v === null || v === undefined || isNaN(v)) ? '' : (Number(v).toFixed(1) + y2UnitTxt) })
                 });
-                seriesList.push({ name: y2Name, type: 'line', yAxisIndex: 1, data: finalY2Data, connectNulls: false, symbol: 'none', showSymbol: false, symbolSize: 0, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
+                // 面积+折线组合图：次轴折线与主系列面积同用平滑曲线，避免一条弯、一条直的视觉割裂
+                let y2ObjVirtual = { name: y2Name, type: 'line', yAxisIndex: 1, data: finalY2Data, connectNulls: false, symbol: 'none', showSymbol: false, symbolSize: 0, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' };
+                if (config.type === 'area-line') y2ObjVirtual.smooth = true;
+                seriesList.push(y2ObjVirtual);
             } else if(isComboChartType(config.type)) {
                 let rateType2 = /环比|mom/i.test(config.yField2 || '') ? 'mom' : 'yoy';
                 let isCumulative2 = config.timeScope === 'ytd' || /累计/.test(config.yField2 || '');
@@ -8826,7 +8829,10 @@
                 // 2026-10-15：次度量（普通度量或原始比率列）自定义显示名优先
                 let y2SeriesNamePlain = getMetricDisplayNameOverride(config, 'y2') || getMappedValue(config.yField2, window.currentLang);
                 y2SeriesRef.name = y2SeriesNamePlain;
-                seriesList.push({ name: y2SeriesNamePlain, type: 'line', yAxisIndex: 1, data: finalY2Data, connectNulls: false, symbol: 'none', showSymbol: false, symbolSize: 0, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
+                // 面积+折线组合图：次轴折线同样平滑（柱状+折线组合保持原样不动）
+                let y2ObjPlain = { name: y2SeriesNamePlain, type: 'line', yAxisIndex: 1, data: finalY2Data, connectNulls: false, symbol: 'none', showSymbol: false, symbolSize: 0, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' };
+                if (config.type === 'area-line') y2ObjPlain.smooth = true;
+                seriesList.push(y2ObjPlain);
             }
             let histRangeMain = buildHistRangeSeries(config, xData, { isEn: isEn, explicitlyRequestedTotal: explicitlyRequestedTotal, isTopN: isTopN });
             let histOptsMain = { explicitlyRequestedTotal: explicitlyRequestedTotal, isTopN: isTopN };
