@@ -911,6 +911,8 @@
                 <label data-page-node-id="B6D6kJ6lWoaIacbychfhm5">时间范围</label>
                 <select id="kpiTimeScopeSel" onchange="toggleCustomTime('kpi'); syncKpiPeriodTextDefault();" data-page-node-id="FMwNI1ja0fAFDVTRGQ9j8i">
                     <option value="latest" data-page-node-id="53Qa15tsHzXj6lFK46cMRw">最新一期</option>
+                    <option value="latest-week" title="主值按自然周窗口聚合；同环比按同口径可比窗口的聚合值计算">最新一周 (自然周)</option>
+                    <option value="latest-month" title="主值按自然月窗口聚合；同环比按同口径可比窗口的聚合值计算">最新一月 (自然月)</option>
                     <option value="ytd" data-page-node-id="C8ZkKNtN3XeA9rttVFJZlq">当年累计</option>
                     <option value="all" data-page-node-id="3FDn4lT1IrhK4CDJ4cEtLV">全量筛选区间</option>
                     <option value="custom-point" data-page-node-id="WZbJ32meb0hx5Qr1NT8Vry">自定义单点时间</option>
@@ -925,6 +927,14 @@
                 <span id="kpiCustomTo" style="display:none;" data-page-node-id="Oxoa2rKwcg3fC9DIjIeIiC">至</span>
                 <input type="date" id="kpiCustomEnd" style="display:none;" onchange="syncKpiPeriodTextDefault()" data-page-node-id="WN0A1XVhB98VXtt0d6oUe5">
             </div>
+        </div>
+        <div class="form-group" id="kpiCompareModeGroup" style="display:none;">
+            <label>同环比对比口径 (未完的最新一周 / 最新一月)</label>
+            <select id="kpiCompareModeSel">
+                <option value="same-period">同期同口径 (默认)：对比区间按本期日历进度截取</option>
+                <option value="full-period">完整周期对比：与完整的前一周 / 前一月 / 去年同期比</option>
+            </select>
+            <div style="font-size:11.5px; color:#6B7280; margin-top:4px; line-height:1.6;">未完周/月默认只取与本期已过日历天数相同的对比区间；对比区间无数据或聚合值为 0 时显示「—」，不回退单日值。需要原来的整期对比时手动选「完整周期对比」。</div>
         </div>
         <div class="form-row" data-page-node-id="zux4GO9EgTHreX2oPM9GbF">
             <div class="form-group" data-page-node-id="RAOfvOHW6hbBCVNuEnYx5L">
@@ -1082,6 +1092,8 @@
                 <select id="chartTimeScopeSel" onchange="toggleCustomTime('chart')" data-page-node-id="tRQx1LNxuDgtRdxkGIGVx6">
                     <option value="all" data-page-node-id="9J2cFOQTnzGfzEdxOkxNdR">遵循全局时间筛选</option>
                     <option value="latest" data-page-node-id="i4aTQ4zWjYL9vLyxO0VCIF">仅展示最新一期数据</option>
+                    <option value="latest-week">仅展示最新一周 (自然周)</option>
+                    <option value="latest-month">仅展示最新一月 (自然月)</option>
                     <option value="ytd" data-page-node-id="bzUWDdZstQDNoUA1Tm3auj">仅展示当年累计数据 (YTD)</option>
                     <option value="custom-point" data-page-node-id="GXlDyrh4q6DF7rDjGUT7iX">自定义单点时间</option>
                     <option value="custom-range" data-page-node-id="EuulCouaHS5AEFIjDrz9Hx">自定义时间区间</option>
@@ -1551,6 +1563,7 @@
             let input = document.getElementById(id);
             if (input) input.type = inputType;
         });
+        syncTimeScopeOptionsForGranularity();
         }
     }
 
@@ -3878,6 +3891,136 @@
         });
     }
 
+    /**
+     * 「最新一周 / 最新一月」的自然周/月窗口（用户 11-10）。
+     * 基准是「当前数据中最新日期所在的自然周 / 自然月」，不是系统当天 —— 数据常有滞后，
+     * 按系统当天会在数据更新前得到空图。与既有 latest / ytd 一致，取传入 baseData
+     * （已应用全局日期筛选与卡片局部筛选）里的最大日期。
+     * 自然周＝周一~周日（ISO 口径），自然月＝当月 1 日~当月最后一天。
+     * 月频事实表无法再细到周，latest-week 退化为「最新月」并置 monthlyFallback。
+     * 返回 { start, end, monthKey, monthlyFallback }，日期均为 YYYY-MM-DD，可直接字典序比较。
+     */
+    function getNaturalScopeWindow(baseData, scope) {
+        if (!baseData || !baseData.length || !dateColumn) return null;
+        if (scope !== 'latest-week' && scope !== 'latest-month') return null;
+        let seen = new Set();
+        for (let i = 0; i < baseData.length; i++) {
+            let v = String((baseData[i] && baseData[i][dateColumn]) || '');
+            if (/^\d{4}-\d{2}-\d{2}$/.test(v)) seen.add(v);
+        }
+        if (!seen.size) return null;
+        let dates = Array.from(seen).sort();
+        let last = dates[dates.length - 1];
+        let monthKey = last.substring(0, 7);
+        let y = parseInt(monthKey.substring(0, 4), 10);
+        let mo = parseInt(monthKey.substring(5, 7), 10);
+        let lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+        let pad = n => String(n).padStart(2, '0');
+        if (scope === 'latest-month' || isMonthlyData) {
+            return { start: monthKey + '-01', end: monthKey + '-' + pad(lastDay), monthKey: monthKey, monthlyFallback: isMonthlyData && scope === 'latest-week' };
+        }
+        let dt = new Date(last + 'T00:00:00Z');
+        let back = (dt.getUTCDay() + 6) % 7;               // 周一=0，周日=6
+        let startMs = dt.getTime() - back * 86400000;
+        let endMs = startMs + 6 * 86400000;
+        let iso = ms => { let d = new Date(ms); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); };
+        return { start: iso(startMs), end: iso(endMs), monthKey: monthKey, monthlyFallback: false };
+    }
+
+    /** 卡片期次文本：把自然周/月窗口转成中英文可读区间，未取到窗口时返回 null */
+    function naturalScopePeriodText(scope, baseData) {
+        let rows = baseData || filteredData;
+        let win = getNaturalScopeWindow(rows, scope);
+        if (!win) return null;
+        // 期次文本按「窗口内实际有数据的首末日期」显示，而不是理论整周/整月边界 ——
+        // 数据常滞后几天，写「11月9日-15日」会让人误以为已包含 15 日的数据。
+        let actualStart = win.start, actualEnd = win.end;
+        try {
+            let inWin = [];
+            for (let i = 0; i < rows.length; i++) {
+                let v = String((rows[i] && rows[i][dateColumn]) || '');
+                if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= win.start && v <= win.end) inWin.push(v);
+            }
+            if (inWin.length) { inWin.sort(); actualStart = inWin[0]; actualEnd = inWin[inWin.length - 1]; }
+        } catch (e) {}
+        let y1 = actualStart.substring(0, 4), y2 = actualEnd.substring(0, 4);
+        let m1 = parseInt(actualStart.substring(5, 7), 10), m2 = parseInt(actualEnd.substring(5, 7), 10);
+        let d1 = parseInt(actualStart.substring(8, 10), 10), d2 = parseInt(actualEnd.substring(8, 10), 10);
+        let enM = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        if (scope === 'latest-month' || win.monthlyFallback) {
+            return { zh: y1 + '年' + m1 + '月', en: enM[m1 - 1] + ' ' + y1 };
+        }
+        if (y1 !== y2) {
+            return { zh: y1 + '年' + m1 + '月' + d1 + '日-' + y2 + '年' + m2 + '月' + d2 + '日',
+                     en: enM[m1 - 1] + ' ' + d1 + ', ' + y1 + ' – ' + enM[m2 - 1] + ' ' + d2 + ', ' + y2 };
+        }
+        if (m1 === m2) {
+            return { zh: y1 + '年' + m1 + '月' + d1 + '日-' + d2 + '日',
+                     en: enM[m1 - 1] + ' ' + d1 + '–' + d2 + ', ' + y1 };
+        }
+        return { zh: y1 + '年' + m1 + '月' + d1 + '日-' + m2 + '月' + d2 + '日',
+                 en: enM[m1 - 1] + ' ' + d1 + ' – ' + enM[m2 - 1] + ' ' + d2 + ', ' + y1 };
+    }
+
+    const __EXTREME_MONTH_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function formatExtremePeriodPoint(c, isEn) {
+        if (!c) return '';
+        let y = c.y, m = c.m || 1, d = c.d || 1;
+        if (c.kind === 'day') return isEn ? __EXTREME_MONTH_EN[m - 1] + ' ' + d + ', ' + y : y + '年' + m + '月' + d + '日';
+        if (c.kind === 'month') return isEn ? __EXTREME_MONTH_EN[m - 1] + ' ' + y : y + '年' + m + '月';
+        if (c.kind === 'week') return isEn ? y + ' W' + String(c.w || 1).padStart(2, '0') : y + '年第' + (c.w || 1) + '周';
+        if (c.kind === 'quarter') return isEn ? y + ' Q' + (c.q || 1) : y + '年第' + (c.q || 1) + '季度';
+        return isEn ? String(y) : y + '年';
+    }
+    /** max/min 卡片的主值来自某一个具体期次；按期次颗粒度返回该期次的中英文文本 */
+    function extremePeriodTextForKPI(rows, field, agg, calcOpts, isEn) {
+        try {
+            if (!rows || !rows.length || !dateColumn || (agg !== 'max' && agg !== 'min')) return null;
+            let o = calcOpts || {};
+            let totalRows = o.skipTotalRow ? [] : rows.filter(isTotalRow);
+            let baseRows = totalRows.length ? totalRows
+                : rows.filter(d => (o.explicitlyRequestedTotal && !o.isTopN) ? true : !isTotalRow(d));
+            if (!baseRows.length) return null;
+            let vals = [];
+            for (let i = 0; i < baseRows.length; i++) {
+                let v = baseRows[i][field];
+                if (v !== null && v !== undefined && v !== '' && !isNaN(Number(v))) vals.push(Number(v));
+            }
+            if (!vals.length) return null;
+            let extreme = agg === 'max' ? Math.max(...vals) : Math.min(...vals);
+            let keys = [];
+            for (let i = 0; i < baseRows.length; i++) {
+                let v = baseRows[i][field];
+                if (v === null || v === undefined || v === '' || isNaN(Number(v))) continue;
+                if (Math.abs(Number(v) - extreme) > 1e-9) continue;
+                let raw = baseRows[i][dateColumn];
+                if (raw === null || raw === undefined) continue;
+                let s = String(raw).trim();
+                if (s && keys.indexOf(s) < 0) keys.push(s);
+            }
+            if (!keys.length) return null;
+            let ctxRows = (typeof rawData !== 'undefined' && Array.isArray(rawData) && rawData.length) ? rawData : rows;
+            let g = getDateGranularity(ctxRows, dateColumn) || 'month';
+            let list = [];
+            keys.forEach(s => {
+                let c = parsePeriodKey(s, dateColumn);
+                if (!c) return;
+                let nc = (c.kind === 'week' || c.kind === 'quarter') ? c : normalizeToGranularity(c, g);
+                let text = formatExtremePeriodPoint(nc, isEn);
+                if (text) list.push({ ord: periodSortKey(nc), text: text });
+            });
+            if (!list.length) return null;
+            list.sort((a, b) => a.ord - b.ord);
+            let all = [];
+            list.forEach(x => { if (all.indexOf(x.text) < 0) all.push(x.text); });
+            let lab = agg === 'max' ? (isEn ? 'Highest' : '最高') : (isEn ? 'Lowest' : '最低');
+            let tip = isEn
+                ? lab + ' value on ' + all[0] + (all.length > 1 ? '; tied periods: ' + all.join(', ') : '')
+                : lab + '值出现在 ' + all[0] + (all.length > 1 ? '；并列期次：' + all.join('、') : '');
+            return { text: all[0], title: tip };
+        } catch (e) { return null; }
+    }
+
     // 第三十七轮：结果按"数据数组 + 口径"缓存。原来每次都要对全表 map+Set+sort 求日期集合
     // （45k 行 × 8 张卡片 = 几百毫秒），切语言/刷新时数据其实没变。
     // 另外缓存后返回的是同一个数组对象，上轮加的"期次索引缓存"才能真正命中。
@@ -3894,6 +4037,19 @@
         
         let latestDate = allDates[allDates.length - 1];
         if(scope === 'latest') { sMap[sKey] = baseData.filter(d => String(d[dateColumn]).startsWith(latestDate)); return sMap[sKey]; }
+        if(scope === 'latest-week' || scope === 'latest-month') {
+            let win = getNaturalScopeWindow(baseData, scope);
+            if (win) {
+                sMap[sKey] = baseData.filter(d => {
+                    let ds = String(d[dateColumn] || '');
+                    return ds >= win.start && ds <= win.end;
+                });
+            } else {
+                // 日期列非标准格式时退化为「最新月」，避免选了范围却整盘全量
+                sMap[sKey] = baseData.filter(d => String(d[dateColumn] || '').startsWith(latestDate.substring(0, 7)));
+            }
+            return sMap[sKey];
+        }
         if(scope === 'ytd') { sMap[sKey] = baseData.filter(d => String(d[dateColumn]).startsWith(latestDate.substring(0, 4))); return sMap[sKey]; }
         if(scope === 'custom-point' && config.customStart) { sMap[sKey] = baseData.filter(d => String(d[dateColumn]).startsWith(config.customStart)); return sMap[sKey]; }
         if(scope === 'custom-range' && config.customStart && config.customEnd) {
@@ -3909,6 +4065,194 @@
         }
         sMap[sKey] = baseData;
         return baseData;
+    }
+
+    // 自然周/月（及自定义区间）下，主值是「窗口内按 agg 聚合」的结果，同环比必须用
+    // 「同口径可比窗口按同一 agg 聚合」的结果互比。取窗口内最新一天做单点对比，或读事实表
+    // 里最新一行的原生同环比列，都会与卡片主值口径矛盾。以下函数统一生成窗口与聚合率。
+    function ymdFromUtcMs(ms) {
+        let d = new Date(ms);
+        return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+    }
+    function ymdToUtcMs(s) {
+        let m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return NaN;
+        return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    }
+    function shiftYmdDays(s, n) {
+        let ms = ymdToUtcMs(s);
+        return isNaN(ms) ? '' : ymdFromUtcMs(ms + n * 86400000);
+    }
+    function shiftYmdMonths(s, n, keepMonthEnd) {
+        let m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return '';
+        let y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+        let lastSrc = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+        let t = new Date(Date.UTC(y, mo - 1 + n, 1));
+        let ty = t.getUTCFullYear(), tm = t.getUTCMonth() + 1;
+        let lastDst = new Date(Date.UTC(ty, tm, 0)).getUTCDate();
+        let dd = (keepMonthEnd && d === lastSrc) ? lastDst : Math.min(d, lastDst);
+        return ty + '-' + String(tm).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+    }
+    function shiftYmdYears(s, n, keepMonthEnd) {
+        let m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return '';
+        let y = Number(m[1]) + n, mo = Number(m[2]), d = Number(m[3]);
+        let lastSrc = new Date(Date.UTC(y - n, mo, 0)).getUTCDate();
+        let lastDst = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+        let dd = (keepMonthEnd && d === lastSrc) ? lastDst : Math.min(d, lastDst);
+        return y + '-' + String(mo).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+    }
+    function isoWeekPartsOfYmd(s) {
+        let ms = ymdToUtcMs(s);
+        if (isNaN(ms)) return null;
+        let dt = new Date(ms);
+        dt.setUTCDate(dt.getUTCDate() + 4 - (dt.getUTCDay() || 7));
+        let isoYear = dt.getUTCFullYear();
+        let jan1 = new Date(Date.UTC(isoYear, 0, 1));
+        return { y: isoYear, w: Math.ceil((((dt - jan1) / 86400000) + 1) / 7) };
+    }
+    function mondayOfIsoWeek(y, w) {
+        let jan4 = new Date(Date.UTC(y, 0, 4));
+        let firstMonday = jan4.getTime() - ((jan4.getUTCDay() || 7) - 1) * 86400000;
+        return ymdFromUtcMs(firstMonday + (w - 1) * 7 * 86400000);
+    }
+    function latestDateInRateWindow(rows, win) {
+        if (!rows || !rows.length || !win || !dateColumn) return null;
+        let max = '';
+        for (let i = 0; i < rows.length; i++) {
+            let ds = String((rows[i] && rows[i][dateColumn]) || '').substring(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(ds) || ds < win.start || ds > win.end) continue;
+            if (ds > max) max = ds;
+        }
+        return max || null;
+    }
+    function getAggregateRateWindow(baseData, config) {
+        if (!dateColumn || !baseData || !baseData.length || !config) return null;
+        let scope = config.timeScope;
+        if (scope === 'latest-week' || scope === 'latest-month') {
+            let w = getNaturalScopeWindow(baseData, scope);
+            if (!w || !/^\d{4}-\d{2}-\d{2}$/.test(w.start) || !/^\d{4}-\d{2}-\d{2}$/.test(w.end)) return null;
+            let win = { start: w.start, end: w.end, scope: scope, weekly: scope === 'latest-week' && !w.monthlyFallback };
+            let actual = latestDateInRateWindow(baseData, win);
+            win.actualEnd = actual || win.end;
+            // 月频事实表一行代表整月（日期值落在月初），拿它当「本月只过了 1 天」会把对比窗口
+            // 裁成上月 1 号单日。只有日频序列才存在「未完」的日历进度，月频一律按整期对比。
+            win.incomplete = !isMonthlyData && !w.monthlyFallback && !!actual && actual < win.end;
+            return win;
+        }
+        if (scope === 'custom-range' && config.customStart && config.customEnd) {
+            let s = alignDateBoundary(config.customStart, false), e = alignDateBoundary(config.customEnd, true);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !/^\d{4}-\d{2}-\d{2}$/.test(e) || s > e) return null;
+            return { start: s, end: e, scope: scope, weekly: false, incomplete: false };
+        }
+        return null;
+    }
+    // 可比窗口 = 当前窗口按周期整体平移：日/周环比平移 1 天 / 7 天，月环比平移一个自然月
+    // （月末对齐），同比平移一年；周窗口的同比走「去年同一 ISO 周」，保证星期分布一致
+    //（日度数据周末常缺，错位一天就会少一个观测日）。
+    function getAggregateRateCompareWindow(win, rateType, mode) {
+        if (!win) return null;
+        let s = win.start, e = win.end, cmp = null;
+        if (rateType === 'dod') cmp = { start: shiftYmdDays(s, -1), end: shiftYmdDays(e, -1) };
+        else if (rateType === 'wow') {
+            // 月/自定义长窗口若只平移 7 天，对比窗口会与本期重叠大半，得出的比率没有意义。
+            // 此时退化为「紧邻本期之前、与本期等长、不重叠」的上一个相邻周期。
+            let len = Math.round((ymdToUtcMs(e) - ymdToUtcMs(s)) / 86400000) + 1;
+            if (!isFinite(len) || len < 1) return null;
+            let shift = len > 7 ? len : 7;
+            cmp = { start: shiftYmdDays(s, -shift), end: shiftYmdDays(e, -shift) };
+        }
+        else if (rateType === 'mom') cmp = { start: shiftYmdMonths(s, -1, false), end: shiftYmdMonths(e, -1, true) };
+        else if (rateType === 'yoy') {
+            if (win.weekly) {
+                let iw = isoWeekPartsOfYmd(s);
+                if (!iw) return null;
+                let monday = mondayOfIsoWeek(iw.y - 1, iw.w);
+                let back = isoWeekPartsOfYmd(monday);
+                if (!back || back.y !== iw.y - 1) monday = mondayOfIsoWeek(iw.y - 1, Math.max(1, iw.w - 1));
+                cmp = { start: monday, end: shiftYmdDays(monday, 6) };
+            } else cmp = { start: shiftYmdYears(s, -1, false), end: shiftYmdYears(e, -1, true) };
+        }
+        if (!cmp || !cmp.start || !cmp.end) return null;
+        if (mode !== 'full-period' && win.incomplete && win.actualEnd) {
+            let progress = Math.round((ymdToUtcMs(win.actualEnd) - ymdToUtcMs(s)) / 86400000) + 1;
+            let full = Math.round((ymdToUtcMs(e) - ymdToUtcMs(s)) / 86400000) + 1;
+            if (isFinite(progress) && progress >= 1 && progress < full) {
+                let cut = shiftYmdDays(cmp.start, progress - 1);
+                if (cut && cut < cmp.end) { cmp = { start: cmp.start, end: cut, samePeriod: true }; }
+            }
+        }
+        return cmp;
+    }
+    function rowsInAggregateWindow(rows, win) {
+        if (!rows || !rows.length || !win || !dateColumn) return [];
+        return rows.filter(d => {
+            let ds = String((d && d[dateColumn]) || '');
+            if (!/^\d{4}-\d{2}-\d{2}/.test(ds)) return false;
+            let k = ds.substring(0, 10);
+            return k >= win.start && k <= win.end;
+        });
+    }
+    function calcAggregateWindowRate(o) {
+        try {
+            let base = { window: o.window, compareWindow: o.compareWindow, agg: o.agg, field: o.field };
+            let curRows = rowsInAggregateWindow(o.rows, o.window);
+            let prevRows = rowsInAggregateWindow(o.rows, o.compareWindow);
+            if (!curRows.length) return Object.assign({ ok: false, reason: 'no-current' }, base);
+            if (!prevRows.length) return Object.assign({ ok: false, reason: 'no-compare' }, base);
+            let curVal = calcValueForField(curRows, o.field, o.agg, o.calcOpts);
+            let prevVal = calcValueForField(prevRows, o.field, o.agg, o.calcOpts);
+            if (curVal === null || prevVal === null || isNaN(curVal) || isNaN(prevVal)) {
+                return Object.assign({ ok: false, reason: 'bad-value', curVal: curVal, prevVal: prevVal }, base);
+            }
+            let isDiff = isRateColumn(o.field);
+            if (!isDiff && prevVal === 0) {
+                return Object.assign({ ok: false, reason: 'zero-base', curVal: curVal, prevVal: prevVal, isDiff: isDiff }, base);
+            }
+            let rate = isDiff ? (curVal - prevVal) : (curVal - prevVal) / prevVal * 100;
+            if (!isFinite(rate)) {
+                return Object.assign({ ok: false, reason: 'bad-value', curVal: curVal, prevVal: prevVal, isDiff: isDiff }, base);
+            }
+            return Object.assign({ ok: true, rate: rate, curVal: curVal, prevVal: prevVal, isDiff: isDiff }, base);
+        } catch (e) { return { ok: false, reason: 'error', window: o && o.window, compareWindow: o && o.compareWindow }; }
+    }
+    function aggregateWindowRateTitle(r, rateType, isEn) {
+        let zhLab = { mom: '月环比', wow: '周环比', dod: '日环比', yoy: '同比' }[rateType] || rateType;
+        let enLab = { mom: 'MoM', wow: 'WoW', dod: 'DoD', yoy: 'YoY' }[rateType] || rateType;
+        let agg = String(r.agg || 'sum').toLowerCase();
+        let aggLab = isEn ? ({ sum: 'sum', avg: 'avg', max: 'max', min: 'min' }[agg] || agg)
+                          : ({ sum: '合计', avg: '平均', max: '最大', min: '最小' }[agg] || agg);
+        let f = v => { let n = Number(v); return isFinite(n) ? n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '-'; };
+        let a = r.window, b = r.compareWindow;
+        let sp = !!(b && b.samePeriod);
+        let zhTag = sp ? '（同期同口径）' : '';
+        let enTag = sp ? ' (same-period)' : '';
+        return isEn
+            ? `${enLab}${enTag}: ${a.start} – ${a.end} (${aggLab} ${f(r.curVal)}) vs ${b.start} – ${b.end} (${aggLab} ${f(r.prevVal)})`
+            : `${zhLab}${zhTag}：本期 ${a.start} ~ ${a.end}（${aggLab} ${f(r.curVal)}）对比 ${b.start} ~ ${b.end}（${aggLab} ${f(r.prevVal)}）`;
+    }
+    // 可比窗口无法参与计算时显示「—」：不回退到单点值，也不把除数为 0 的比率硬算出来。
+    function aggregateWindowUnavailableTitle(r, rateType, isEn) {
+        let zhLab = { mom: '月环比', wow: '周环比', dod: '日环比', yoy: '同比' }[rateType] || rateType;
+        let enLab = { mom: 'MoM', wow: 'WoW', dod: 'DoD', yoy: 'YoY' }[rateType] || rateType;
+        let a = r && r.window ? `${r.window.start} ~ ${r.window.end}` : '';
+        let b = r && r.compareWindow ? `${r.compareWindow.start} ~ ${r.compareWindow.end}` : '';
+        let spTag = (r && r.compareWindow && r.compareWindow.samePeriod)
+            ? (isEn ? ' (same-period window)' : '（同期同口径截取的对比区间）') : '';
+        if (r && r.reason === 'zero-base') {
+            return isEn ? `${enLab}: comparison ${b}${spTag} aggregates to 0; ratio undefined`
+                        : `${zhLab}：对比 ${b}${spTag} 聚合值为 0，除数不能为 0，不显示比率`;
+        }
+        if (r && r.reason === 'no-current') {
+            return isEn ? `${enLab}: no data in current window ${a}` : `${zhLab}：本期 ${a} 无数据，无法计算`;
+        }
+        return isEn ? `${enLab}: no data in comparison window ${b}${spTag}; shown as — instead of a single-point rate`
+                    : `${zhLab}：对比 ${b}${spTag} 无数据，不回退单点值，显示为「—」`;
+    }
+    function generateUnavailableRateHtml(labelType, tip) {
+        let tipAttr = tip ? ' title="' + String(tip).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '"' : '';
+        return `<span class="mom-text" style="color:#6B7280;"${tipAttr}>${labelType}: —</span>`;
     }
 
     function calcValueForField(dataSubset, fieldName, aggType, options = {}) {
@@ -3946,7 +4290,7 @@
     
     // avg / max / min：均价类字段（单位 元/吨、美元/吨）自动按数量列加权平均，
     // 避免微量国家（单价畸高）把简单平均拉飞；找不到权重列时回退简单平均。
-    if (aggType === 'avg') {
+    if (aggType === 'avg' && !options.skipPriceWeight) {
         let wCol = getPriceFieldWeightColumn(fieldName);
         let wVal = weightedAverageByVolume(baseRows, fieldName, wCol);
         if (wVal !== null) return wVal;
@@ -4069,7 +4413,7 @@
      *                  自算率值也都是百分数 —— "≤1 视为小数比例再 ×100" 的启发式已整体移除，
      *                  否则像 发电量同比=-0.1 这种正常值会被错误放大成 -10%。
      */
-    function generateRateHtml(labelType, rateVal, unit, noScale) {
+    function generateRateHtml(labelType, rateVal, unit, noScale, tip) {
         if(isNaN(rateVal) || rateVal === null) return '';
         let isEn = (window.currentLang === 'en');
         let numCheck = rateVal;
@@ -4077,12 +4421,14 @@
 
         // 中文：涨红跌绿；英文：涨绿跌红
         let color = '#6B7280';
-        let formattedLabel = (Math.abs(numCheck) === 0) ? (isEn ? 'Flat' : '持平') : `${Math.abs(numCheck).toFixed(2)}${unitSuffix}`;
+        let isFlat = Math.abs(numCheck) < 0.005;
+        let formattedLabel = isFlat ? (isEn ? 'Flat' : '持平') : `${Math.abs(numCheck).toFixed(2)}${unitSuffix}`;
         
-        if (numCheck > 0) { color = isEn ? '#16A34A' : '#DC2626'; formattedLabel = '+' + formattedLabel; }
-        else if (numCheck < 0) { color = isEn ? '#DC2626' : '#16A34A'; formattedLabel = '-' + formattedLabel; }
-        
-        return `<span class="mom-text" style="color:${color};">${labelType}: ${formattedLabel}</span>`;
+        if (!isFlat && numCheck > 0) { color = isEn ? '#16A34A' : '#DC2626'; formattedLabel = '+' + formattedLabel; }
+        else if (!isFlat && numCheck < 0) { color = isEn ? '#DC2626' : '#16A34A'; formattedLabel = '-' + formattedLabel; }
+
+        let tipAttr = tip ? ' title="' + String(tip).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '"' : '';
+        return `<span class="mom-text" style="color:${color};"${tipAttr}>${labelType}: ${formattedLabel}</span>`;
     }
 
     function renderKPIs() {
@@ -4122,6 +4468,20 @@
             baseData = filteredData;
         }
         let scopedData = getScopedData(baseData, kpi);
+        // 时间窗口型卡片（最新一周/月、自定义区间）里每行通常已是一个期次的聚合值
+        //（如每日收盘均价）。此时按同行量列加权会得出「量加权均价」，与用户按这些期次值
+        // 直接求平均的预期不符，故 avg 走简单平均；同一期次有多行明细、以及非窗口时间
+        // 范围仍沿用原有量加权，不改变历史口径。calcOpts 与 kpiCalcOpts 同一对象，
+        // 主值与窗口同环比自动同源。
+        if (['latest-week', 'latest-month', 'custom-range'].indexOf(kpi.timeScope) >= 0 && dateColumn && scopedData.length) {
+            let __seenDates = Object.create(null), __oneRowPerDate = true;
+            for (let __i = 0; __i < scopedData.length; __i++) {
+                let __dk = String(scopedData[__i][dateColumn] || '');
+                if (__seenDates[__dk]) { __oneRowPerDate = false; break; }
+                __seenDates[__dk] = 1;
+            }
+            kpiCalcOpts.skipPriceWeight = __oneRowPerDate;
+        }
         // 第四十三轮：同环比自动计算需要前一期/去年同期数据；局部筛选若选了"年月名称"等时间维度，
         // 会把前一期数据排除在外，导致 MoM/WoW/DoD/YoY 变成"持平"。这里构造"忽略时间维度筛选"的 rateBaseData
         // 专门用于 rate 计算；主值 currentVal 仍按局部筛选原样显示。
@@ -4287,19 +4647,91 @@
                     if (r !== null && !isNaN(r)) yoyHtml = generateRateHtml('YoY', r, kpiFieldDiffUnit, true);
                 }
             }
+            // 窗口聚合口径优先：主值是窗口内按 agg 聚合时，同环比同样按「窗口聚合 vs
+            // 可比窗口聚合」计算，覆盖上面的单点口径。必须与各 showXxx 分支平级放在
+            // if(dateColumn) 内 —— 只勾 MoM/WoW 而没勾同比的卡片也要走窗口口径。
+            // 原表自带同环比列时（常见于官方发布的月度数据，口径已调整、不能按原始数值
+            // 重算）必须直接采用原表值，故先过一道原生列闸门：匹配逻辑与上面各分支同源，
+            // 且要求卡片数据的最新一行该列确有可解析数值，空值仍回退窗口聚合。
+            let nativeRateReady = (rateType) => {
+                try {
+                    let col = null;
+                    if (rateType === 'mom' || rateType === 'yoy') {
+                        col = findDirectRateColumn(kpi.field, rateType, { cumulative: isCumulativeKPI });
+                    } else if (rateType === 'wow') {
+                        col = findRateColumnByKeyword(kpi.field, ['周环比', '环比周', 'wow', 'week-on-week', 'weekly']);
+                    } else if (rateType === 'dod') {
+                        col = findRateColumnByKeyword(kpi.field, ['日环比', '环比日', 'dod', 'day-on-day', 'daily']);
+                    }
+                    if (!col) return false;
+                    let row = pickLatestRateRow(scopedData, explicitlyRequestedTotalKPI);
+                    let raw = row ? row[col] : null;
+                    let cell = parseRateCellNumber(raw);
+                    return !!(cell && !isNaN(cell.n));
+                } catch (e) { return false; }
+            };
+            let __aggWinCache;
+            let aggWin = (rateType, label) => {
+                try {
+                    if (__aggWinCache === undefined) __aggWinCache = getAggregateRateWindow(baseData, kpi);
+                    let win = __aggWinCache;
+                    if (!win) return null;
+                    if (nativeRateReady(rateType)) return null;
+                    let cmp = getAggregateRateCompareWindow(win, rateType, kpi.compareMode === 'full-period' ? 'full-period' : 'same-period');
+                    if (!cmp || !cmp.start || !cmp.end) {
+                        return generateUnavailableRateHtml(label, aggregateWindowUnavailableTitle(
+                            { reason: 'no-compare', window: win, compareWindow: null }, rateType, isEn));
+                    }
+                    let r = calcAggregateWindowRate({
+                        rows: rateBaseData, window: win, compareWindow: cmp,
+                        field: kpi.field, agg: kpi.agg || 'sum', calcOpts: calcOpts
+                    });
+                    if (!r) return null;
+                    // 可比窗口无数据、或聚合值为 0（除数不能为 0）→ 显示「—」并注明原因，
+                    // 不再退回上面的单点口径；可比窗口有非 0 值时照算，不校验观测天数是否对等。
+                    if (r.ok === false) return generateUnavailableRateHtml(label, aggregateWindowUnavailableTitle(r, rateType, isEn));
+                    return generateRateHtml(label, r.rate, r.isDiff ? kpiFieldDiffUnit : null, true,
+                                            aggregateWindowRateTitle(r, rateType, isEn));
+                } catch (e) { return null; }
+            };
+            if (kpi.showMoM) { let h = aggWin('mom', 'MoM'); if (h) momHtml = h; }
+            if (kpi.showWoW) { let h = aggWin('wow', 'WoW'); if (h) wowHtml = h; }
+            if (kpi.showDoD) { let h = aggWin('dod', 'DoD'); if (h) dodHtml = h; }
+            if (kpi.showYoY) { let h = aggWin('yoy', 'YoY'); if (h) yoyHtml = h; }
         }
 
         let titleText = isEn ? (kpi.titleEn || kpi.titleZh || kpi.title) : (kpi.titleZh || kpi.title);
         let customTimeText = isEn ? (kpi.customTextEn || kpi.customTextZh || kpi.customText) : (kpi.customTextZh || kpi.customText);
 
         let timeText = customTimeText;
+        let timeTitleAttr = '';
+        let extremeTime = (!timeText && (kpi.agg === 'max' || kpi.agg === 'min')
+            && ['latest', 'ytd', 'custom-point'].indexOf(kpi.timeScope) < 0)
+            ? extremePeriodTextForKPI(scopedData, kpi.field, kpi.agg, calcOpts, isEn) : null;
         if (!timeText) {
             // 第六十一轮：卡片未自定义时 → 全局期次文本 > 按数据自动生成 > 系统兜底
             let __mode = getKpiPeriodMode(kpi);
             let __auto = __mode ? buildKpiPeriodTextDefault(kpi.field, kpi.timeScope, kpi.customStart, kpi.customEnd) : null;
             let __g = getGlobalKpiPeriodText(__mode, isEn);
             let __a = (__auto && (isEn ? __auto.en : __auto.zh)) || '';
-            if(kpi.timeScope === 'latest') timeText = __g || __a || (isEn ? 'Latest Period' : '最新期次');
+            if (extremeTime) {
+                timeText = extremeTime.text;
+                let sh = '';
+                if (kpi.timeScope === 'latest-week' || kpi.timeScope === 'latest-month') {
+                    let nt2 = naturalScopePeriodText(kpi.timeScope, baseData);
+                    if (nt2) sh = isEn ? '; window ' + nt2.en : '；统计区间 ' + nt2.zh;
+                }
+                timeTitleAttr = ' title="' + String(extremeTime.title + sh)
+                    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '"';
+            }
+            else if(kpi.timeScope === 'latest-week' || kpi.timeScope === 'latest-month') {
+                // 自然周/月窗口按本卡片实际数据生成；不套用全局「最新期次/当年累计」期次文本
+                let nt = naturalScopePeriodText(kpi.timeScope, baseData);
+                timeText = nt ? (isEn ? nt.en : nt.zh)
+                    : (isEn ? (kpi.timeScope === 'latest-week' ? 'Latest Week' : 'Latest Month')
+                            : (kpi.timeScope === 'latest-week' ? '最新一周' : '最新一月'));
+            }
+            else if(kpi.timeScope === 'latest') timeText = __g || __a || (isEn ? 'Latest Period' : '最新期次');
             else if(kpi.timeScope === 'ytd') timeText = __g || __a || (isEn ? 'YTD' : '当年累计');
             else if(kpi.timeScope === 'custom-point') timeText = kpi.customStart;
             else timeText = isEn ? 'Filtered' : '全局筛选';
@@ -4314,7 +4746,7 @@
             <h4>${titleText}</h4>
             <div class="value">${displayVal} <span style="font-size:13px; font-weight:normal; color:#6B7280;">${unitStr}</span></div>
             <div class="sub-text">
-                <span>${timeText}</span> 
+                <span${timeTitleAttr}>${timeText}</span> 
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">${momHtml}${yoyHtml}${wowHtml}${dodHtml}</div>
             </div>
         `;
@@ -5856,16 +6288,256 @@
             .map(f => ({ field: f.field, agg: f.agg }));
     }
 
+    /**
+     * 辅助线取数必须与主系列使用同一个「年内期次」键：主系列优先按 X 轴字段的显示值反解，
+     * 只有解析失败才从日期推导。若辅助线只按日期推导，事实表的「周名称」不是 ISO 周、
+     * 或 X 轴是「月日名称」时，区间带 / ±1σ / 参考线会整体错位。
+     */
+    function periodKeyForRow(row, config, granularity) {
+        let xf = config && config.xField;
+        // 只对「年内循环周期」字段（周/月/季/月日）按显示值反解；普通分类字段
+        // （如 '1号矿'）带数字也不能被当成期次键，否则非季节图的辅助线取数会被改变。
+        if (xf && (!dateColumn || xf !== dateColumn) && isCyclicPeriodField(xf)) {
+            let raw = (typeof getXValue === 'function') ? getXValue(row, xf) : row[xf];
+            if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
+                let pk = (typeof periodKeyFromLabel === 'function') ? periodKeyFromLabel(raw, granularity) : '';
+                if (pk) return pk;
+            }
+        }
+        return periodKeyFromDate(String(row[dateColumn] || ''), granularity);
+    }
+
+    /**
+     * 与主系列同口径归约「同一期次 × 同一年」单元格内的多条记录。
+     * 局部筛选设为「平均 / 最大 / 最小 / 计数」时，主系列按该方式归约，辅助线也必须按同样方式，
+     * 否则日频数据下主系列是日均值、辅助线却是日内求和，两者相差一个数量级。
+     * 未显式设置非求和聚合时原样求和，既有行为不变。
+     */
+    function reducePeriodCell(entries, config) {
+        let aggFields = (config && !isRateColumn(config.yField)) ? getAggregateFields(config) : [];
+        if (aggFields.length === 0) {
+            let sum = 0;
+            entries.forEach(e => { let v = Number(e.y); if (isFinite(v)) sum += v; });
+            return sum;
+        }
+        return aggregateCellValues(entries, aggFields);
+    }
+
+    /**
+     * bak153：移动平均不受「定义时间范围」限制。
+     * 时间范围(timeScope) / 全局日期筛选 / 时间维度局部筛选只决定「可见窗口」，
+     * N 期滚动平均则基于不受时间裁剪的全量序列计算，借用可见窗口之前的历史期次预热，
+     * 这样可见窗口开头的点也有移动平均值，且数值与全量序列口径一致。
+     * 聚合口径与主链路完全一致（求和/平均/最大/最小/计数、均价加权、合计行、单位折算）；
+     * 虚拟指标 / 率列 / TopN / 类别 X 轴 / 横向图等复杂口径返回 null，自动回退原有窗口内算法。
+     */
+    function maGranularityFor(config) {
+        let xf = String((config && config.xField) || '');
+        if (xf && isYearLikeField(xf) && !/月|日|周|季|week|month|day|quarter|date/i.test(xf)) return 'year';
+        if (/季|quarter|qtr/i.test(xf)) return 'quarter';
+        return getPeriodGranularity(xf);
+    }
+
+    // 每行的「绝对期次键」：循环期次（月/周/月日/季）补上年份，形成可跨年排序的时间轴。
+    // 例：日期 2026-01-05 → X=日期 '2026-01-05'；X=月日名称 '2026-01-05'；X=月份名称 '2026-01'。
+    function maAbsKeyForRow(row, config, gran) {
+        let dStr = String((row && row[dateColumn]) || '');
+        let ym = dStr.match(/((?:19|20)\d{2})/);
+        if (!ym) return '';
+        if (gran === 'year') return ym[0];
+        if (gran === 'quarter') {
+            let mo = parseInt(dStr.substring(5, 7), 10);
+            return (mo >= 1 && mo <= 12) ? (ym[0] + '-Q' + Math.ceil(mo / 3)) : '';
+        }
+        let pk = periodKeyForRow(row, config, gran);
+        if (!pk) return '';
+        let s = String(pk);
+        if (/^(19|20)\d{2}/.test(s)) return s;
+        return ym[0] + '-' + s;
+    }
+
+    let __maFullWeak = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+
+    /**
+     * 构造不受时间限制的全量主度量序列。返回 { keys, vals, index, gran } 或 null。
+     * 只放宽「时间」：非时间维度的全局切片器与局部筛选仍然生效，避免把用户主动排除的
+     * 地区/煤种等数据混进预热窗口。
+     */
+    function buildUnboundedMaSeries(config, o) {
+        try {
+            o = o || {};
+            if (!config || !dateColumn || !isTimeDimension(config.xField)) return null;
+            if (!Array.isArray(rawData) || !rawData.length) return null;
+            if (o.mainRateMetric || o.isRateCol || o.isPercent || o.isTopN || o.isHorizontal) return null;
+            if (config.topN && config.topN !== 'all') return null;
+            let isEn = !!o.isEn;
+            let keepTotal = !!o.explicitlyRequestedTotal;
+            let gran = maGranularityFor(config);
+            let lfs = config.localFilters || [];
+            let nonTimeLfs = lfs.filter(f => !isTimeDimension(f.field));
+            let separateLfs = lfs.filter(f => f.mode === 'separate' && getLocalFilterValues(f).length > 0 && !isTimeDimension(f.field));
+            let aggFields = getAggregateFields(config);
+            let useAggBuckets = aggFields.length > 0 && !o.skipAggBuckets;
+            let wCol = getPriceFieldWeightColumn(config.yField);
+            // 缓存：全量序列与时间范围无关，按数据源引用 + 口径签名复用，避免每张卡片重扫全表。
+            let slicerSig = (dashboardConfig.slicers || []).map(sl => {
+                if (isTimeDimension(sl.field)) return sl.field + ':T';
+                let el = document.getElementById('filter_' + sl.field);
+                return sl.field + ':' + (el ? el.value : '');
+            }).join(';');
+            let sig = [config.xField, config.yField, isEn ? 'en' : 'zh', keepTotal ? 'T' : 'D',
+                gran, useAggBuckets ? 'A' : 'S', useAggBuckets ? aggFields.map(a => a.field + '=' + a.agg).join(',') : '',
+                wCol || '', JSON.stringify(nonTimeLfs.map(f => [f.field, f.agg || '', getLocalFilterValues(f)])),
+                slicerSig].join('|');
+            let cMap = __maFullWeak ? __maFullWeak.get(rawData) : null;
+            if (cMap && cMap[sig] !== undefined) return cMap[sig];
+            if (!cMap) { cMap = Object.create(null); if (__maFullWeak) __maFullWeak.set(rawData, cMap); }
+
+            let buckets = Object.create(null);
+            let totalFlags = Object.create(null);
+            if (keepTotal) {
+                rawData.forEach(r => {
+                    if (r && isTotalRow(r)) { let t = maAbsKeyForRow(r, config, gran); if (t) totalFlags[t] = true; }
+                });
+            }
+            rawData.forEach(row => {
+                if (!row) return;
+                // 全局切片器：非时间维度照常生效，时间维度放行
+                for (let sl of (dashboardConfig.slicers || [])) {
+                    if (isTimeDimension(sl.field)) continue;
+                    let el = document.getElementById('filter_' + sl.field);
+                    let sel = el ? el.value : '';
+                    if (!sel || sel === 'ALL') continue;
+                    let arr = parseSlicerSelValue(sel);
+                    if (arr.length) { if (!arr.includes(String(row[sl.field]))) return; }
+                    else if (String(row[sl.field]) !== sel) return;
+                }
+                if (nonTimeLfs.length && !checkLocalFilters(row, nonTimeLfs, rawData)) return;
+                if (separateLfs.length && !separateLfs.every(f => getLocalFilterValues(f).some(v => localFilterValueMatches(row[f.field], v)))) return;
+                let rowIsTotal = isTotalRow(row);
+                if (!keepTotal && rowIsTotal) return;
+                let t = maAbsKeyForRow(row, config, gran);
+                if (!t) return;
+                if (keepTotal && !rowIsTotal && totalFlags[t]) return;
+                let raw = row[config.yField];
+                if (raw === null || raw === undefined || raw === '' || isNaN(Number(raw))) return;
+                let num = Number(raw);
+                if (isEn) num /= enUnitDivisor(config.yField);
+                if (!buckets[t]) buckets[t] = { entries: [], sum: 0, sw: 0, spw: 0 };
+                let b = buckets[t];
+                b.sum += num;
+                if (useAggBuckets) b.entries.push({ dims: aggFields.map(af => String(row[af.field])), y: num, total: rowIsTotal, w: wCol ? Number(row[wCol]) : undefined });
+                if (wCol) { let w = Number(row[wCol]); if (isFinite(w) && w > 0) { b.sw += w; b.spw += num * w; } }
+            });
+            let keys = Object.keys(buckets);
+            if (!keys.length) { cMap[sig] = null; return null; }
+            keys.sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+            let vals = keys.map(k => {
+                let b = buckets[k];
+                if (useAggBuckets) {
+                    let v = aggregateCellValues(b.entries, aggFields, config.yField);
+                    return (v === null || v === undefined || !isFinite(v)) ? null : v;
+                }
+                return (wCol && b.sw > 0) ? (b.spw / b.sw) : b.sum;
+            });
+            let index = Object.create(null);
+            keys.forEach((k, i) => { index[k] = i; });
+            let res = { keys: keys, vals: vals, index: index, gran: gran };
+            cMap[sig] = res;
+            return res;
+        } catch (e) { return null; }
+    }
+
+    // 可见 X 键 → 绝对期次键（与可见行同源）。无法一一对应时返回 null，整体回退原算法。
+    function maVisibleTimeKeys(xKeys, rows, config, gran) {
+        let map = Object.create(null), seen = Object.create(null);
+        (rows || []).forEach(row => {
+            let x = getXValue(row, config.xField);
+            if (!x) return;
+            let t = maAbsKeyForRow(row, config, gran);
+            if (!t) return;
+            if (map[x] === undefined) { map[x] = t; seen[x] = Object.create(null); }
+            seen[x][t] = 1;
+        });
+        let keys = xKeys || [];
+        let list = keys.map(k => map[k] || '');
+        if (list.some(t => !t)) return null;
+        // X=月份名称 且事实表含多年、未做年份细分时，主链路会把多年同月合并成一个点，
+        // 全量时间轴无法一一对应；此时回退，避免 MA 窗口单位错乱。
+        if (keys.some(k => !seen[k] || Object.keys(seen[k]).length > 1)) return null;
+        for (let i = 1; i < list.length; i++) if (String(list[i]) <= String(list[i - 1])) return null;
+        return list;
+    }
+
+    // 优先用全量序列的滚动窗口；定位不到历史期次时回退到可见窗口内的原算法。
+    function movingAverageWithHistory(xKeys, yData, periods, full, visibleT) {
+        let fallback = yData.map((val, idx, arr) => {
+            if (idx < periods - 1) return null;
+            let sum = 0;
+            for (let k = idx - periods + 1; k <= idx; k++) {
+                if (arr[k] === null || arr[k] === undefined) return null;
+                sum += arr[k];
+            }
+            return sum / periods;
+        });
+        if (!full || !visibleT || full.keys.length <= xKeys.length) return fallback;
+        // 口径自检：全量序列在可见窗口内必须与主系列逐点一致，否则说明当前图表口径
+        // （率列/虚拟指标/TopN/合计行/聚合分桶等）不适用全量预热，整体回退原算法。
+        let posList = xKeys.map((x, i) => visibleT[i] ? full.index[visibleT[i]] : undefined);
+        for (let i = 0; i < xKeys.length; i++) {
+            let pos = posList[i];
+            if (pos === undefined) continue;
+            let a = yData[i], b = full.vals[pos];
+            if (typeof a === 'number' && isFinite(a) && typeof b === 'number' && isFinite(b)) {
+                if (Math.abs(a - b) > Math.max(1e-6, Math.abs(a) * 1e-6)) return fallback;
+            }
+        }
+        return xKeys.map((x, idx) => {
+            let pos = posList[idx];
+            if (pos === undefined || pos < periods - 1) return fallback[idx];
+            let sum = 0;
+            for (let k = pos - periods + 1; k <= pos; k++) {
+                let v = full.vals[k];
+                if (v === null || v === undefined || !isFinite(v)) return fallback[idx];
+                sum += v;
+            }
+            return sum / periods;
+        });
+    }
+
     // 区间带的时间粒度：跟随当前 X 轴所选的时间维度
     function getPeriodGranularity(xField) {
         let s = String(xField || '');
         if (!s || (dateColumn && s === dateColumn)) return isMonthlyData ? 'month' : 'day';
+        // 月日名称 / MonthDay / 月日：年内「月-日」粒度。必须在下面的 week/month 判定之前，
+        // 否则字段名里带「月」会被当成月粒度，几十上百个月日值被塞进 12 个月桶
+        // （X 轴显示 1月~12月，放大图也是错的）。
+        if (/月\s*日|month.?day|monthday/i.test(s)) return 'day';
+        // 周名称 / Week / W01：循环周粒度。与 getPeriodUnitLabel 的 week 判定保持一致，
+        // 否则季节图会把 52 个周值硬塞进 12 个月桶，X 轴仍显示 1月~12月。
+        if (/周|week|wk/i.test(s) && !/年|year|月|month|日期|date/i.test(s)) return 'week';
         if (/日|day|date|日期/i.test(s) && !/月|month|年月|year.?month/i.test(s)) return 'day';
         return 'month';
     }
 
+    // ISO 8601 周序号（01~53）：周四所在年份为周历年，周一为一周起点。
+    // 供"按日期推导年内期次"的历史区间带 / 统计辅助线与周标签对齐。
+    function isoWeekKeyFromDate(dStr) {
+        let m = String(dStr || '').trim().match(/((?:19|20)\d{2})\D+(\d{1,2})\D+(\d{1,2})/);
+        if (!m) return '';
+        let dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+        if (isNaN(dt.getTime())) return '';
+        let day = dt.getUTCDay() || 7;
+        dt.setUTCDate(dt.getUTCDate() + 4 - day);
+        let yearStart = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+        let wk = Math.ceil((((dt - yearStart) / 86400000) + 1) / 7);
+        if (wk < 1 || wk > 53) return '';
+        return String(wk).padStart(2, '0');
+    }
+
     function periodKeyFromDate(dStr, granularity) {
         if (!dStr || dStr.length < 7) return '';
+        if (granularity === 'week') return isoWeekKeyFromDate(dStr);
         return granularity === 'day' ? dStr.substring(5, 10) : dStr.substring(5, 7);
     }
 
@@ -5900,10 +6572,30 @@
             if (cn && PERIOD_CN_MONTHS[cn] !== undefined) return String(PERIOD_CN_MONTHS[cn]).padStart(2, '0');
             return '';
         }
+        if (granularity === 'week') {
+            if (nums.length > 0) {
+                let n = parseInt(nums[0], 10);
+                if (!isNaN(n) && n >= 1 && n <= 53) return String(n).padStart(2, '0');
+            }
+            return '';
+        }
         if (nums.length >= 2) {
             let mo = parseInt(nums[0], 10), dd = parseInt(nums[1], 10);
             if (isNaN(mo) || isNaN(dd) || mo < 1 || mo > 12 || dd < 1 || dd > 31) return '';
             return String(mo).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+        }
+        // 月日名称的英文列常写成 'Jan 5' / 'December 25'：只有一个数字时把月份名解析出来
+        if (nums.length === 1) {
+            let low = rest.toLowerCase().replace(/[^a-z]/g, '');
+            let mo = PERIOD_MONTH_NAMES[low];
+            if (mo === undefined) {
+                let cn = rest.replace(/[月日\s\d]/g, '');
+                mo = PERIOD_CN_MONTHS[cn];
+            }
+            let dd = parseInt(nums[0], 10);
+            if (mo >= 1 && mo <= 12 && !isNaN(dd) && dd >= 1 && dd <= 31) {
+                return String(mo).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+            }
         }
         return '';
     }
@@ -5919,7 +6611,7 @@
         if (isSortKeyColumn(field)) return false;
         let vals = Array.from((uniqueValuesMap || {})[field] || []);
         if (vals.length === 0) return false;
-        let cap = granularity === 'month' ? 12 : 366;
+        let cap = granularity === 'month' ? 12 : (granularity === 'week' ? 53 : 366);
         if (vals.length > cap * 2) return false;   // 唯一值远多于期次数 → 不是期次标签列
         let hit = 0;
         vals.forEach(v => { if (periodKeyFromLabel(v, granularity)) hit++; });
@@ -5930,11 +6622,15 @@
     function findPeriodLabelField(granularity) {
         let fields = Object.keys(uniqueValuesMap || {});
         if (granularity === 'day') {
-            return dateColumn;
+            // 优先用「月日名称 / MonthDay」这类显示列（可能带中英映射），
+            // 否则才回退到完整日期列，避免 X 轴出现 '2026-01-05' 这种带年份的长标签。
+            return fields.find(c => /月日|month.?day|monthday/i.test(c) && isPeriodLabelCandidate(c, 'day')) || dateColumn;
         }
-        let pattern = granularity === 'quarter'
-            ? (c => /季|quarter|qtr/i.test(c) && !/年|year|月|month/i.test(c))
-            : (c => /月|month|mth/i.test(c) && !/年|year|年月|year.?month/i.test(c));
+        let pattern = granularity === 'week'
+            ? (c => /周|week|wk/i.test(c) && !/年|year|月|month|日期|date/i.test(c))
+            : (granularity === 'quarter'
+                ? (c => /季|quarter|qtr/i.test(c) && !/年|year|月|month/i.test(c))
+                : (c => /月|month|mth/i.test(c) && !/年|year|年月|year.?month/i.test(c)));
         // 先优先"名称类"字段（月份名称），再退到任何含"月/month"的字段（Month）；
         // 两者都必须通过候选校验，否则宁可返回空串交由 defaultPeriodLabel 生成标准标签
         let named = fields.find(c => pattern(c) && /名称|name|label/i.test(c) && isPeriodLabelCandidate(c, granularity));
@@ -5942,24 +6638,49 @@
         return fields.find(c => pattern(c) && isPeriodLabelCandidate(c, granularity)) || '';
     }
 
+    // 标准中文期次标签（第01周 / 1月 / 1月5日 / 第1季度）：交给 defaultPeriodLabel
+    // 统一去前导零并做中英切换，保持既有 X 轴文案不变。
+    function isStandardCnPeriodLabel(s, granularity) {
+        let v = String(s === null || s === undefined ? '' : s).trim();
+        if (!v) return false;
+        if (granularity === 'month') return /^\d{1,2}\s*月$/.test(v) || /^[一二三四五六七八九十]{1,3}\s*月$/.test(v);
+        if (granularity === 'week') return /^第\s*0*\d{1,2}\s*周$/.test(v);
+        if (granularity === 'day') return /^\d{1,2}\s*月\s*\d{1,2}\s*日$/.test(v);
+        if (granularity === 'quarter') return /^第\s*\d{1,2}\s*季度$/.test(v);
+        return false;
+    }
+
     /**
-     * 期次标签取值：只有拿到"真正的译文"才用；拿不到（或译文仍是中文而当前是英文界面）
-     * 就统一回落到 defaultPeriodLabel 生成标准标签，避免 X 轴出现裸数字或英文界面显示中文。
+     * 期次标签取值：优先用维度表的真实显示名（含中英译文），否则才生成标准标签。
+     * 中英通用、没有翻译词条的维度表名称（如 W33 / Week 3 / Jan 5）若一律回落到
+     * defaultPeriodLabel，季节图会自造「第33周」，与同一 X 字段在组合图里的 W33 不一致。
+     * 标准中文标签（第01周 / 1月）仍走 defaultPeriodLabel，保持去前导零与中英切换。
      */
     function pickPeriodLabel(pk, raw, granularity, lang) {
-        let t = getMappedValue(raw, lang);
-        if (t !== null && t !== undefined && String(t).trim() !== '' && String(t) !== String(raw)) {
+        let s = String(raw === null || raw === undefined ? '' : raw).trim();
+        let t = getMappedValue(s, lang);
+        if (t !== null && t !== undefined && String(t).trim() !== '' && String(t) !== s) {
             if (lang === 'en' && /[\u4e00-\u9fa5]/.test(String(t))) {
                 return defaultPeriodLabel(pk, granularity, lang);
             }
             return String(t);
         }
+        if (s && !isStandardCnPeriodLabel(s, granularity)) {
+            let pureNum = /^\d+$/.test(s);
+            let fullDate = /^(19|20)\d{2}\D+\d{1,2}\D+\d{1,2}/.test(s);
+            let cnInEn = (lang === 'en' && /[\u4e00-\u9fa5]/.test(s));
+            if (!pureNum && !fullDate && !cnInEn) return s;
+        }
         return defaultPeriodLabel(pk, granularity, lang);
     }
 
-    function buildPeriodLabelMap(granularity) {
+    function buildPeriodLabelMap(granularity, preferredField) {
         let map = {};
-        let field = findPeriodLabelField(granularity);
+        // 优先用当前 X 轴字段自身的显示值（维度表名称）；只有它不是合法期次标签列时
+        // 才按字段名另猜，避免季节图与组合图对同一 X 字段显示两套名称。
+        let field = (preferredField && isPeriodLabelCandidate(preferredField, granularity))
+            ? preferredField
+            : findPeriodLabelField(granularity);
         if (!field) return map;
         let vals = Array.from(uniqueValuesMap[field] || []);
         vals.forEach(v => {
@@ -5975,12 +6696,27 @@
     }
     function defaultPeriodLabel(pk, granularity, lang) {
         let s = String(pk);
+        let namesEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         if (granularity === 'month') {
             let n = parseInt(s, 10);
-            if (!isNaN(n)) {
-                let namesEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            if (!isNaN(n) && n >= 1 && n <= 12) {
                 return lang === 'en' ? namesEn[n - 1] : n + '月';
             }
+        }
+        if (granularity === 'day') {
+            let m = s.match(/^(\d{1,2})\D+(\d{1,2})$/);
+            if (m) {
+                let mo = parseInt(m[1], 10), dd = parseInt(m[2], 10);
+                if (mo >= 1 && mo <= 12 && dd >= 1 && dd <= 31) {
+                    return lang === 'en' ? namesEn[mo - 1] + ' ' + dd : mo + '月' + dd + '日';
+                }
+            }
+            return s;
+        }
+        if (granularity === 'week') {
+            let n = parseInt(s.replace(/[^0-9]/g, ''), 10);
+            if (!isNaN(n) && n >= 1 && n <= 53) return lang === 'en' ? 'W' + n : '第' + n + '周';
+            return s;
         }
         if (granularity === 'quarter') {
             let n = parseInt(s.replace(/[^0-9]/g, ''), 10);
@@ -6048,21 +6784,32 @@
         else rows = rows.filter(d => !isTotalRow(d));
         if (rows.length === 0) return null;
 
-        let valueMap = {}, allYears = new Set();
+        let cellMap = {}, allYears = new Set();
+        let aggFields = isRateColumn(config.yField) ? [] : getAggregateFields(config);
         rows.forEach(row => {
             let dStr = String(row[dateColumn] || '');
             if (dStr.length < 7) return;
             let yr = dStr.substring(0, 4);
-            let pk = periodKeyFromDate(dStr, granularity);
+            let pk = periodKeyForRow(row, config, granularity);
             if (!pk) return;
             let raw = row[config.yField];
             if (raw === null || raw === undefined || raw === '') return;
             let val = Number(raw);
             if (isNaN(val)) return;
             if (opts.isEn) val /= enUnitDivisor(config.yField);
-            if (!valueMap[pk]) valueMap[pk] = {};
-            valueMap[pk][yr] = (valueMap[pk][yr] === undefined) ? val : valueMap[pk][yr] + val;
+            if (!cellMap[pk]) cellMap[pk] = {};
+            if (!cellMap[pk][yr]) cellMap[pk][yr] = [];
+            cellMap[pk][yr].push({ dims: aggFields.map(af => String(row[af.field])), y: val, total: false });
             allYears.add(yr);
+        });
+        // 与主系列同口径归约（平均/最大/最小/计数），未设置时仍为求和
+        let valueMap = {};
+        Object.keys(cellMap).forEach(pk => {
+            valueMap[pk] = {};
+            Object.keys(cellMap[pk]).forEach(yr => {
+                let v = reducePeriodCell(cellMap[pk][yr], config);
+                if (v !== null && v !== undefined && isFinite(Number(v))) valueMap[pk][yr] = Number(v);
+            });
         });
 
         let yearsArr = Array.from(allYears).sort();
@@ -6216,6 +6963,9 @@
         if (!canOverlayStatLines(config)) return res;
         let vals = allValues.filter(v => v !== null && v !== undefined && !isNaN(Number(v))).map(Number).sort((a, b) => a - b);
         if (vals.length === 0) return res;
+        // 非负度量（成交量 / 产量 / 价格等）不能出现负值：±1σ 下界 mean-σ 在波动大时会跌破 0，
+        // 两段式堆叠的隐形下界会把 Y 轴拉出负刻度。仅在数据本身非负时把下界夹到 0。
+        let nonNegative = vals[0] >= 0;
         let t = uiText[window.currentLang] || uiText.zh;
         let L = (k, zhFallback, enFallback) => t[k] || (window.currentLang === 'en' ? enFallback : zhFallback);
         // 全局均值仅在 per-X 数据不可用（无历史区间数据，如只为单值参考线）时使用。
@@ -6345,6 +7095,8 @@
                     if (lo === null || hi === null || isNaN(lo) || isNaN(hi)) {
                         perXLower.push(null); perXBand.push(null); perXMeta.push(null);
                     } else {
+                        if (nonNegative && lo < 0) lo = 0;
+                        if (hi < lo) hi = lo;
                         perXLower.push(lo); perXBand.push({ value: hi - lo, meta: { min: lo, max: hi } }); perXMeta.push({ min: lo, max: hi });
                     }
                 });
@@ -6368,6 +7120,8 @@
                 // 全局 ±1σ（fallback）：当 histYears 不可用时无法给年份区间，保留原名。
                 // 当 histYears 可用但 perXStats 全空（如 X 颗粒度无法对齐），仍补上区间，保持视觉一致。
                 let lo = mean - std, hi = mean + std;
+                if (nonNegative && lo < 0) lo = 0;
+                if (hi < lo) hi = lo;
                 let tu = uiText[window.currentLang] || uiText.zh;
                 let yearRange = (bandYearsArr && bandYearsArr.length > 0) ? ` [${bandYearsArr[0]}-${bandYearsArr[bandYearsArr.length - 1]}]` : '';
                 let bName = (tu.chartAnalyticsStd || (window.currentLang === 'en' ? '±1σ Band' : '±1σ 区间带')) + yearRange;
@@ -6461,12 +7215,13 @@
         else rows = rows.filter(d => !isTotalRow(d));
         if (rows.length === 0) return null;
 
-        let valueMap = {}, allYears = new Set();
+        let cellMap = {}, allYears = new Set();
+        let aggFields = isRateColumn(config.yField) ? [] : getAggregateFields(config);
         rows.forEach(row => {
             let dStr = String(row[dateColumn] || '');
             if (dStr.length < 7) return;
             let yr = dStr.substring(0, 4);
-            let pk = periodKeyFromDate(dStr, granularity);
+            let pk = periodKeyForRow(row, config, granularity);
             if (!pk) return;
             let raw = row[config.yField];
             if (raw === null || raw === undefined || raw === '') return;
@@ -6476,9 +7231,19 @@
             // 与主系列数据差一个数量级（最常见的 bug 现象）。
             let isEnForMap = (opts.isEn !== undefined) ? !!opts.isEn : (window.currentLang === 'en');
             if (isEnForMap) val /= enUnitDivisor(config.yField);
-            if (!valueMap[pk]) valueMap[pk] = {};
-            valueMap[pk][yr] = (valueMap[pk][yr] === undefined) ? val : valueMap[pk][yr] + val;
+            if (!cellMap[pk]) cellMap[pk] = {};
+            if (!cellMap[pk][yr]) cellMap[pk][yr] = [];
+            cellMap[pk][yr].push({ dims: aggFields.map(af => String(row[af.field])), y: val, total: false });
             allYears.add(yr);
+        });
+        // 与主系列同口径归约：改「平均」时 ±1σ / 中位 / 最大 / 最小 / 分位线一并跟着变
+        let valueMap = {};
+        Object.keys(cellMap).forEach(pk => {
+            valueMap[pk] = {};
+            Object.keys(cellMap[pk]).forEach(yr => {
+                let v = reducePeriodCell(cellMap[pk][yr], config);
+                if (v !== null && v !== undefined && isFinite(Number(v))) valueMap[pk][yr] = Number(v);
+            });
         });
         let yearsArr = Array.from(allYears).sort();
         if (yearsArr.length < 2) return null;
@@ -6935,6 +7700,20 @@
     // 虚拟指标、tooltip、模板字段与全部导出链路，只在主系列的绘制方式上分支。
     function isComboChartType(type) {
         return type === 'combo' || type === 'area-line';
+    }
+    /**
+     * 面积类图表 X 轴两端留白：按用户要求「减少」留白，让面积填充贴近左右 Y 轴。
+     * ECharts 类目轴默认 boundaryGap:true 会在两端各留半个类目；设为 false 后首末数据点
+     * 正好落在左右 Y 轴上，两端留白为 0。series 数据索引不变，不做 min/max 越界扩展
+     * （那是加大留白的方案，已撤销），也不改 axisLabel 间隔，避免破坏 bak129 的首末标签保护。
+     * 放大/横屏/下载/复制/嵌入页搬运同一份 option，自动继承。
+     * 只作用于纵向的面积类图，柱状/折线/组合/季节图/分析图一律不动。
+     */
+    function applyAreaAxisTight(option, type, isHorizontal) {
+        if (isHorizontal || !String(type || '').includes('area')) return;
+        let xa = option && option.xAxis;
+        if (!xa || Array.isArray(xa) || xa.type !== 'category' || !Array.isArray(xa.data) || xa.data.length < 2) return;
+        xa.boundaryGap = false;
     }
     // bak144：分析图表「增减方向」术语 —— 不再写死「增产/减产」。
     // 旧实现中文恒为「增产/减产」，对销量、库存、价格等数据会说错话（英文 Increase/Decrease 本就中性）。
@@ -7572,25 +8351,29 @@
             flowEmptyNotice(chart, config, isEn ? 'Pick a source field and a destination field for the flow matrix.' : '请在编辑器里选择「来源字段」与「目的地字段」。');
             return;
         }
-        let s1 = [], s2 = [], map = {}, seen1 = {}, seen2 = {};
+        let map = {}, seen1 = {}, seen2 = {};
         rows.forEach(r => {
             let a = getXValue(r, f1);
             let b = String(r[f2] == null ? '' : r[f2]).trim();
             let v = flowRowVal(r, vf, isEn);
             if (!a || !b || v === null) return;
-            if (!seen1[a]) { seen1[a] = 1; s1.push(a); }
-            if (!seen2[b]) { seen2[b] = 1; s2.push(b); }
+            seen1[a] = 1; seen2[b] = 1;
             let key = a + '\u0001' + b;
             if (!map[key]) map[key] = { a: a, b: b, v: 0 };
             map[key].v += v;
         });
-        if (!s1.length || !s2.length) { flowEmptyNotice(chart, config, isEn ? 'No flow records found.' : '没有可用的流向记录。'); return; }
+        // 空值 / 0 值单元格不渲染；整行整列都没有有效值时，该类别也不占坐标轴。
+        let cells = Object.keys(map).map(k => map[k]).filter(o => isFinite(o.v) && o.v !== 0);
+        if (!cells.length) { flowEmptyNotice(chart, config, isEn ? 'No non-zero flow records found.' : '没有非零的流向记录。'); return; }
+        let usedA = {}, usedB = {};
+        cells.forEach(o => { usedA[o.a] = 1; usedB[o.b] = 1; });
+        let s1 = Object.keys(seen1).filter(a => usedA[a]);
+        let s2 = Object.keys(seen2).filter(b => usedB[b]);
         let i1 = {}, i2 = {};
         s1.forEach((v, i) => { i1[v] = i; }); s2.forEach((v, i) => { i2[v] = i; });
         let maxV = 0;
-        Object.keys(map).forEach(k => { maxV = Math.max(maxV, map[k].v); });
-        let data = Object.keys(map).map(k => {
-            let o = map[k];
+        cells.forEach(o => { maxV = Math.max(maxV, o.v); });
+        let data = cells.map(o => {
             // 暖色阶越深底越暗，深格用白字，保证数值始终可读（浅格仍用深色字）
             let fg = (maxV > 0 && o.v / maxV > 0.55) ? '#FFFFFF' : '#111827';
             let name = flowDisp(o.a, isEn) + ' → ' + flowDisp(o.b, isEn) + '   ' + formatChartNumber(o.v);
@@ -7643,23 +8426,6 @@
             keyMap[si + '\u0001' + v] = nm;
             nodeStage[nm] = si;
         }));
-        let nodeTotals = {};
-        rows.forEach(r => {
-            let v = flowRowVal(r, vf, isEn);
-            if (v === null) return;
-            stages.forEach((f, si) => {
-                let raw = String(r[f] == null ? '' : r[f]).trim();
-                let nm = raw ? keyMap[si + '\u0001' + raw] : null;
-                if (nm) nodeTotals[nm] = (nodeTotals[nm] || 0) + v;
-            });
-        });
-        let nodes = [];
-        stageVals.forEach((vals, si) => vals.forEach(v => {
-            let nm = keyMap[si + '\u0001' + v];
-            nodes.push({ name: nm,
-                label: { formatter: flowDisp(v, isEn) + '  ' + formatChartNumber(nodeTotals[nm] || 0), fontSize: 11, color: '#111827', fontFamily: FLOW_FONT },
-                itemStyle: { color: FLOW_STAGE_COLORS[si % FLOW_STAGE_COLORS.length], borderColor: '#FFFFFF', borderWidth: 1 } });
-        }));
         let pairs = {};
         rows.forEach(r => {
             let v = flowRowVal(r, vf, isEn);
@@ -7683,6 +8449,21 @@
         if (!links.length) { flowEmptyNotice(chart, config, isEn ? 'No flow links found.' : '没有可用的流量连线。'); return; }
         let inflow = {}, outflow = {};
         links.forEach(l => { outflow[l.source] = (outflow[l.source] || 0) + l.value; inflow[l.target] = (inflow[l.target] || 0) + l.value; });
+        // 只保留真正参与连线的节点：0 值 / 空值行生成的孤立节点会被 ECharts 全部塞进
+        // 第一列，造成节点与标签堆叠；节点数值改按连线口径（首阶段出流、末阶段入流）。
+        let usedNodes = {};
+        links.forEach(l => { usedNodes[l.source] = 1; usedNodes[l.target] = 1; });
+        let nodes = [];
+        stageVals.forEach((vals, si) => vals.forEach(v => {
+            let nm = keyMap[si + '\u0001' + v];
+            if (!nm || !usedNodes[nm]) return;
+            let nv = (si === 0) ? (outflow[nm] || 0)
+                : (si === stages.length - 1) ? (inflow[nm] || 0)
+                : Math.max(inflow[nm] || 0, outflow[nm] || 0);
+            nodes.push({ name: nm,
+                label: { formatter: flowDisp(v, isEn) + '  ' + formatChartNumber(nv), fontSize: 11, color: '#111827', fontFamily: FLOW_FONT },
+                itemStyle: { color: FLOW_STAGE_COLORS[si % FLOW_STAGE_COLORS.length], borderColor: '#FFFFFF', borderWidth: 1 } });
+        }));
         lastFlowConservationDev = 0;
         window.__flowConservationDev = 0;
         window.__flowStageCount = stages.length;
@@ -7724,7 +8505,8 @@
             let v = flowRowVal(r, vf, isEn);
             let sv = flowRowVal(r, sf, isEn);
             if (v === null) return;
-            if (!agg[k]) { agg[k] = 0; sizeAgg[k] = 0; cats.push(k); }
+            // 0 值类目不能靠 !agg[k] 判重（0 恒为 falsy，会把同一区域重复 push 到 X 轴）
+            if (!Object.prototype.hasOwnProperty.call(agg, k)) { agg[k] = 0; sizeAgg[k] = 0; cats.push(k); }
             agg[k] += v;
             if (sv !== null) sizeAgg[k] += sv;
         });
@@ -7751,8 +8533,9 @@
             tooltip: { trigger: 'item', confine: true },
             legend: { show: false },
             grid: { left: 64, right: 40, top: 52, bottom: xRot ? 76 : 48, containLabel: false },
+            // 气泡自带区域标签，X 轴类目名与之重复；只保留基线，不显示轴刻度文字
             xAxis: { type: 'category', data: cats.map(k => flowDisp(k, isEn)),
-                axisLabel: { fontSize: 12, color: '#374151', fontFamily: FLOW_FONT, interval: 0, hideOverlap: false, rotate: xRot },
+                axisLabel: { show: false },
                 axisTick: { show: false }, axisLine: { lineStyle: { color: '#D1D5DB' } } },
             yAxis: { type: 'value', name: unitName || '', nameLocation: 'end', nameGap: 16,
                 nameTextStyle: { fontSize: 11, color: '#6B7280', align: 'left', fontFamily: FLOW_FONT },
@@ -7763,9 +8546,32 @@
             graphic: []
         });
     }
+    // TopN 截取：主链路的 TopN 在 isFlowChartType 短路之后，三类流向图原本完全走不到。
+    // 这里按 X 阶段（来源字段 / 区域字段 / 阶段 1）的度量合计降序取前 N 个类目，再过滤事实行；
+    // 其余阶段的节点从剩余行重新收集，不会留下孤立节点，口径与柱/折线图一致。
+    function flowApplyTopN(rows, config) {
+        let n = (config && config.topN && config.topN !== 'all') ? parseInt(config.topN, 10) : 0;
+        if (!n || !isFinite(n) || n <= 0 || !rows || !rows.length) return rows;
+        let xf = config.xField, vf = config.yField;
+        if (!xf || !vf) return rows;
+        let totals = {}, order = [];
+        rows.forEach(r => {
+            let k = getXValue(r, xf);
+            if (!k) return;
+            let v = flowRowVal(r, vf, false);
+            if (v === null) return;
+            if (!Object.prototype.hasOwnProperty.call(totals, k)) { totals[k] = 0; order.push(k); }
+            totals[k] += v;
+        });
+        if (order.length <= n) return rows;
+        let keep = {};
+        order.slice().sort((a, b) => (totals[b] - totals[a]) || String(a).localeCompare(String(b)))
+            .slice(0, n).forEach(k => { keep[k] = 1; });
+        return rows.filter(r => keep[getXValue(r, xf)]);
+    }
     function renderFlowChart(chart, config, ctx) {
         let isEn = !!ctx.isEn;
-        let rows = (ctx.chartData || ctx.scopedData || []).filter(r => r && !isTotalRow(r));
+        let rows = flowApplyTopN((ctx.chartData || ctx.scopedData || []).filter(r => r && !isTotalRow(r)), config);
         let unitName = '';
         try { unitName = extractPureUnit(config.yField, isEn) || ''; } catch (e) {}
         if (config.type === 'flow-matrix') renderFlowMatrix(chart, config, rows, isEn, unitName);
@@ -8196,10 +9002,21 @@
                     groupMap[x] = v;
                 });
             } else {
+            // 基期必须能回溯到窗口之外：时间范围裁剪只决定「显示哪几期」，不应把前期数据一起砍掉。
+            // 与次轴虚拟指标、KPI 的 rateBaseData 取数口径保持一致，否则 latest-week 下主度量
+            // 变化率整条线为 null，而次轴同样口径的线却有值。
+            let mainRateRows = scopedData;
+            if (config.timeScope && config.timeScope !== 'all') {
+                let lfsMain = config.localFilters || [];
+                let nonDateMain = lfsMain.filter(f => !isTimeDimension(f.field));
+                if (nonDateMain.length === lfsMain.length) mainRateRows = baseData;
+                else if (nonDateMain.length === 0) mainRateRows = filteredData;
+                else mainRateRows = filteredData.filter(d => checkLocalFilters(d, nonDateMain, filteredData));
+            }
             xDataKeys.forEach(x => {
                 if (mainRateMetric.kind === 'diff') {
                     let v = calcAutoPeriodChange({
-                        rows: scopedData, xField: config.xField, xValue: x,
+                        rows: mainRateRows, xField: config.xField, xValue: x,
                         valueField: mainRateMetric.field, agg: config.agg || 'sum', rateType: mainRateMetric.rateType,
                         calcOpts: calcOpts, granularity: gMain, keepTotal: explicitlyRequestedTotal
                     });
@@ -8207,7 +9024,7 @@
                     groupMap[x] = v;
                 } else {
                     groupMap[x] = calcAutoPeriodRate({
-                        rows: scopedData, xField: config.xField, xValue: x,
+                        rows: mainRateRows, xField: config.xField, xValue: x,
                         valueField: mainRateMetric.field, agg: config.agg || 'sum', rateType: mainRateMetric.rateType,
                         calcOpts: calcOpts, granularity: gMain, keepTotal: explicitlyRequestedTotal
                     });
@@ -8506,15 +9323,15 @@
                         });
                         return hasVal ? sum : null;
                     });
-                    let maDataSub = totalsSub.map((val, idx, arr) => {
-                        if (idx < maPeriodsSub - 1) return null;
-                        let s2 = 0;
-                        for (let k2 = idx - maPeriodsSub + 1; k2 <= idx; k2++) {
-                            if (arr[k2] === null || arr[k2] === undefined) return null;
-                            s2 += arr[k2];
-                        }
-                        return s2 / maPeriodsSub;
+                    // bak153：合计移动平均同样借用可见窗口之前的历史期次；自定义聚合口径下
+                    // 逐系列归约与全量合计口径不同，保守回退到窗口内算法。
+                    let maFullSub = useAggBuckets ? null : buildUnboundedMaSeries(config, {
+                        isEn: isEn, mainRateMetric: mainRateMetric, isRateCol: isRateColumn(config.yField),
+                        isPercent: isPercent, isTopN: isTopN, isHorizontal: isHorizontal,
+                        explicitlyRequestedTotal: explicitlyRequestedTotal
                     });
+                    let maVisibleTSub = maFullSub ? maVisibleTimeKeys(xData, chartData, config, maFullSub.gran) : null;
+                    let maDataSub = movingAverageWithHistory(xData, totalsSub, maPeriodsSub, maFullSub, maVisibleTSub);
                     if (maDataSub.some(v => v !== null)) {
                         let maInfoSub = getPeriodUnitLabel(config.xField);
                         let maUnitDisplaySub = (window.currentLang === 'en' ? maInfoSub.en : maInfoSub.zh);
@@ -8548,6 +9365,7 @@
                 // bak129：多系列纵向图的类别 X 轴同样保末端标签（interval:'auto' 会丢最右侧类别名）；
                 // 颜色无需显式设——本分支未覆盖 axisLine，标签回退到默认 #6E7079，与 Y 轴一致。
                 option.xAxis = { type: 'category', data: xDataLabels, axisLabel: { showMinLabel: true, showMaxLabel: true } };
+                applyAreaAxisTight(option, config.type, isHorizontal);
                 option.yAxis = { type: 'value', name: isPercent ? '%' : unitY1, min: niceMin, max: isPercent ? 100 : undefined, axisLabel: axisLabelConfig };
             }
             let histRangeSub = buildHistRangeSeries(config, xData, { isEn: isEn, explicitlyRequestedTotal: explicitlyRequestedTotal, isTopN: isTopN });
@@ -8644,6 +9462,7 @@
                 // （用户截图：20 省只显示到倒数第二个）；ECharts 边界防重叠机制会在冲突时删掉
                 // 倒数第二个、保留最后一个，确保末端类别名可见（showMinLabel 同理保最左）。
                 option.xAxis = { type: 'category', data: xDataLabels, axisLine: { onZero: true, onZeroAxisIndex: 0, lineStyle: { color: '#D1D5DB' } }, axisLabel: { color: '#6E7079', showMinLabel: true, showMaxLabel: true } };
+                applyAreaAxisTight(option, config.type, isHorizontal);
             // bak128：Y 轴不设 alignTicks —— ECharts 的刻度对齐会用「另一轴的刻度个数」反推本轴
             // 范围（bottom = niceTop − interval×另一轴刻度数），与本轴数据无关，任一方数据稍深就会被裁
             // （用户截图：组合图次轴 -18.10 被钉在 -15 的轴底裁掉）。单轴图本就无副作用（无对齐对象），
@@ -8694,15 +9513,14 @@
             let maUnitSg = isEn ? (maUnit.enSg || maUnit.en) : maUnit.zh;
             let maName = isEn ? `${maPeriods}-${maUnitSg} MA` : `${maPeriods}${maUnitDisplay}移动平均`;
             if(hasChartAnalytics(config, 'ma') && yData.length > maPeriods) {
-                let maData = yData.map((val, idx, arr) => {
-                    if (idx < maPeriods - 1) return null;
-                    let sum = 0;
-                    for (let k = idx - maPeriods + 1; k <= idx; k++) {
-                        if (arr[k] === null || arr[k] === undefined) return null;
-                        sum += arr[k];
-                    }
-                    return sum / maPeriods;
+                // bak153：时间范围只决定显示窗口，移动平均在不受时间裁剪的全量序列上滚动。
+                let maFull = buildUnboundedMaSeries(config, {
+                    isEn: isEn, mainRateMetric: mainRateMetric, isRateCol: isRateColumn(config.yField),
+                    isPercent: isPercent, isTopN: isTopN, isHorizontal: isHorizontal,
+                    explicitlyRequestedTotal: explicitlyRequestedTotal
                 });
+                let maVisibleT = maFull ? maVisibleTimeKeys(xData, chartData, config, maFull.gran) : null;
+                let maData = movingAverageWithHistory(xData, yData, maPeriods, maFull, maVisibleT);
                 seriesList.push({ name: maName, type: 'line', data: maData, lineStyle: { type: 'dotted', width: 2 }, symbol: 'none', showSymbol: false, symbolSize: 0, connectNulls: false, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' });
             }
 
@@ -8904,7 +9722,9 @@
                     if (targetAxis && targetAxis.type === 'value' && isFinite(minVals)) {
                         let curMin = targetAxis.min;
                         if (curMin === undefined || curMin === null || curMin > minVals) {
-                            targetAxis.min = computeNiceMin(vals0);
+                            let nice0 = computeNiceMin(vals0);
+                            // 与季节图同款：非负度量显式给 0 基线，不让 ECharts 自动算出负刻度。
+                            targetAxis.min = (nice0 === null || nice0 === undefined) ? (minVals >= 0 ? 0 : nice0) : nice0;
                         }
                     }
                 }
@@ -9028,7 +9848,7 @@
             if (rxf && rxf !== config.xField) config.xField = rxf;
         }
         let granularity = getPeriodGranularity(config.xField);
-        let periodLabelMap = buildPeriodLabelMap(granularity);
+        let periodLabelMap = buildPeriodLabelMap(granularity, config.xField);
         let xKeysSet = new Set();
         let yearsSet = new Set();
         let valueMap = {};
@@ -9203,7 +10023,7 @@
 
         let option = {
             color: basePalette,
-            tooltip: { trigger: 'axis', confine: true, valueFormatter: (val) => formatChartNumber(adaptAxisValueToUnit(val, unitY1, isEn)) },
+            tooltip: { trigger: 'axis', confine: true, valueFormatter: (val) => formatChartNumber(adaptAxisValueToUnit(val, unitStr, isEn)) },
             // 季节图：图例紧贴顶部（与主图 / 嵌入页 / 放大弹层 / 下载图同款）。
             // grid.left/right = 48（与主图同款紧凑布局，避免图表看起来扁长，用户反馈 image3）；grid.top 给图例+单位留位。
             legend: { top: 4, left: 48, right: 48, type: 'scroll' },
@@ -9247,7 +10067,10 @@
             if (valsS.length) {
                 let minS = valsS.reduce((a, b) => (b < a ? b : a), Infinity);
                 if (isFinite(minS) && (option.yAxis.min === undefined || option.yAxis.min === null || option.yAxis.min > minS)) {
-                    option.yAxis.min = computeNiceMin(valsS);
+                    let niceS = computeNiceMin(valsS);
+                    // computeNiceMin 遇到 0/负值会返回 null（交给 ECharts 自动）。非负度量
+                    // 明确给 0 基线，避免残留的负辅助值把自动轴下限拉成负刻度。
+                    option.yAxis.min = (niceS === null || niceS === undefined) ? (minS >= 0 ? 0 : niceS) : niceS;
                 }
             }
         } catch (eS) {}
@@ -9866,7 +10689,22 @@ function applyChartAnalyticsI18N() {
         document.getElementById('chartTopNCustom').style.display = (sel === 'custom') ? 'block' : 'none';
     }
 
+    // 月频事实表没有周粒度：时间范围下拉不再提供「最新一周」（选了只会退化成最新月，
+    // 容易让人误以为真的按周统计）。旧模板里的 latest-week 配置在打开编辑弹层时
+    // 归一为 latest-month；代码层仍兼容该值，导入旧配置不会报错。
+    function syncTimeScopeOptionsForGranularity() {
+        let hide = !!isMonthlyData;
+        ['kpiTimeScopeSel', 'chartTimeScopeSel'].forEach(id => {
+            let sel = document.getElementById(id);
+            if (!sel) return;
+            let opt = sel.querySelector('option[value="latest-week"]');
+            if (opt) { opt.hidden = hide; opt.disabled = hide; }
+            if (hide && sel.value === 'latest-week') sel.value = 'latest-month';
+        });
+    }
+
     function toggleCustomTime(mode) {
+        syncTimeScopeOptionsForGranularity();
         let sel = document.getElementById(mode + 'TimeScopeSel').value;
         let group = document.getElementById(mode + 'CustomTimeGroup');
         let toLabel = document.getElementById(mode + 'CustomTo');
@@ -9875,6 +10713,10 @@ function applyChartAnalyticsI18N() {
         if (sel === 'custom-point') { group.style.display = 'block'; toLabel.style.display = 'none'; endInput.style.display = 'none';
         } else if (sel === 'custom-range') { group.style.display = 'block'; toLabel.style.display = 'inline-block'; endInput.style.display = 'block';
         } else { group.style.display = 'none'; }
+        if (mode === 'kpi') {
+            let cmpGroup = document.getElementById('kpiCompareModeGroup');
+            if (cmpGroup) cmpGroup.style.display = (sel === 'latest-week' || sel === 'latest-month') ? 'block' : 'none';
+        }
     }
 
     function openModal(id) { document.getElementById(id).style.display = 'flex'; }
@@ -11147,6 +11989,10 @@ function applyChartAnalyticsI18N() {
             if (!ctx || !ctx.last) return null;
             let g = ctx.g, last = ctx.last;
             let scope = timeScope || 'latest';
+            // 最新一周 / 最新一月：按事实表自然周/月窗口生成期次文本（编辑器预填用）
+            if (scope === 'latest-week' || scope === 'latest-month') {
+                return naturalScopePeriodText(scope, filteredData);
+            }
             let ytdStart = (g === 'month') ? { y: last.y, m: 1, kind: 'month' }
                 : (g === 'day') ? { y: last.y, m: 1, d: 1, kind: 'day' }
                     : (g === 'quarter') ? { y: last.y, q: 1, kind: 'quarter' }
@@ -11266,6 +12112,7 @@ function applyChartAnalyticsI18N() {
         let w0 = document.getElementById('kpiShowWoW'), d0 = document.getElementById('kpiShowDoD');
         if (w0) w0.checked = false; if (d0) d0.checked = false;
         document.getElementById('kpiTimeScopeSel').value = 'latest';
+        document.getElementById('kpiCompareModeSel').value = 'same-period';
         toggleCustomTime('kpi'); document.getElementById('kpiLocalFilters').innerHTML = '';
         // 第五十轮：新建时按"数据字段 + 时间范围 + 事实表颗粒度"预填真实期次文本
         __kpiAutoPeriodText = { zh: '', en: '' };
@@ -11280,6 +12127,7 @@ function applyChartAnalyticsI18N() {
         document.getElementById('kpiModalTitle').textContent = '编辑 KPI 数据卡片';
         document.getElementById('kpiTitleZh').value = kpi.titleZh || kpi.title || ''; document.getElementById('kpiTitleEn').value = kpi.titleEn || '';
         document.getElementById('kpiFieldSel').value = kpi.field; document.getElementById('kpiTimeScopeSel').value = kpi.timeScope || 'all';
+        document.getElementById('kpiCompareModeSel').value = kpi.compareMode === 'full-period' ? 'full-period' : 'same-period';
         document.getElementById('kpiCustomStart').value = kpi.customStart || ''; document.getElementById('kpiCustomEnd').value = kpi.customEnd || '';
         document.getElementById('kpiCustomTextZh').value = kpi.customTextZh || kpi.customText || ''; document.getElementById('kpiCustomTextEn').value = kpi.customTextEn || '';
         document.getElementById('kpiShowMoM').checked = !!kpi.showMoM; document.getElementById('kpiShowYoY').checked = !!kpi.showYoY;
@@ -11359,7 +12207,8 @@ function applyChartAnalyticsI18N() {
             showMoM: document.getElementById('kpiShowMoM').checked, showYoY: document.getElementById('kpiShowYoY').checked,
             showWoW: (document.getElementById('kpiShowWoW') || {}).checked === true,
             showDoD: (document.getElementById('kpiShowDoD') || {}).checked === true,
-            agg: document.getElementById('kpiAggSel').value, localFilters: extractLocalFilters('kpiLocalFilters')
+            agg: document.getElementById('kpiAggSel').value, localFilters: extractLocalFilters('kpiLocalFilters'),
+            compareMode: (document.getElementById('kpiCompareModeSel') || {}).value === 'full-period' ? 'full-period' : 'same-period'
         };
         
         let idx = dashboardConfig.kpis.findIndex(k => k.id === id);
@@ -11578,9 +12427,28 @@ function applyChartAnalyticsI18N() {
         if(idx >= 0) {
             dashboardConfig.charts[idx] = config;
             closeModal('chartModal');
-            // 仅更新当前图表 DOM 与渲染，避免全盘刷新
+            // 仅更新当前图表 DOM 与渲染，避免全盘刷新。
+            // 保存后必须让主卡片"真的变"：复用的旧实例可能画在已被移动/替换的容器上，
+            // 表现为设置改了、仪表盘不变，只有放大/横屏（新建实例）才看得到变化。
+            // 这里只重建这一张卡片的实例，不动其它卡片。
             updateChartCardDOM(config);
+            let cid = 'chart_' + config.id;
+            try {
+                if (chartInstances[cid]) { chartInstances[cid].dispose(); delete chartInstances[cid]; }
+                let dom = document.getElementById(cid);
+                if (dom) dom.removeAttribute('_echarts_instance_');
+            } catch (e) {}
             renderSingleChart(id);
+            try { if (chartInstances[cid]) chartInstances[cid].resize(); } catch (e) {}
+            // 放大 / 横屏弹层若正开着，也同步重绘，避免两处口径不一致
+            try {
+                if (overlayChartId === id && overlayChartInstance && !overlayChartInstance.isDisposed()) {
+                    let land = false;
+                    let ovContent = document.getElementById('chartOverlayContent');
+                    if (ovContent) land = ovContent.classList.contains('landscape');
+                    openChartOverlay(id, land);
+                }
+            } catch (e) {}
         } else {
             dashboardConfig.charts.push(config);
             closeModal('chartModal'); renderChartCard(config);
