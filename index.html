@@ -4194,11 +4194,29 @@
             return k >= win.start && k <= win.end;
         });
     }
+    // 窗口内「实际有数据的首末日期」：卡片期次文本用的就是这个口径，tooltip 的本期区间
+    // 必须与之一致，否则未完的自然周/月会把 11-15 这类尚无数据的未来日期也写进说明。
+    function actualRowsDateRange(rows) {
+        if (!rows || !rows.length || !dateColumn) return null;
+        let lo = '', hi = '';
+        for (let i = 0; i < rows.length; i++) {
+            let ds = String((rows[i] && rows[i][dateColumn]) || '').substring(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) continue;
+            if (!lo || ds < lo) lo = ds;
+            if (!hi || ds > hi) hi = ds;
+        }
+        return lo && hi ? { start: lo, end: hi } : null;
+    }
     function calcAggregateWindowRate(o) {
         try {
             let base = { window: o.window, compareWindow: o.compareWindow, agg: o.agg, field: o.field };
             let curRows = rowsInAggregateWindow(o.rows, o.window);
             let prevRows = rowsInAggregateWindow(o.rows, o.compareWindow);
+            // 日频按实际有数据日期回写本期区间；月频事实表一行代表整月（日期落在月初），
+            // 不能按日裁剪，否则整月会被压成 1 号单日。
+            if (!isMonthlyData && !(o.window && o.window.monthlyFallback)) {
+                base.dataWindow = actualRowsDateRange(curRows);
+            }
             if (!curRows.length) return Object.assign({ ok: false, reason: 'no-current' }, base);
             if (!prevRows.length) return Object.assign({ ok: false, reason: 'no-compare' }, base);
             let curVal = calcValueForField(curRows, o.field, o.agg, o.calcOpts);
@@ -4224,7 +4242,11 @@
         let aggLab = isEn ? ({ sum: 'sum', avg: 'avg', max: 'max', min: 'min' }[agg] || agg)
                           : ({ sum: '合计', avg: '平均', max: '最大', min: '最小' }[agg] || agg);
         let f = v => { let n = Number(v); return isFinite(n) ? n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '-'; };
-        let a = r.window, b = r.compareWindow;
+        // 本期按「窗口内实际有数据的首末日期」显示，与卡片期次文本一致；对比窗口仍显示
+        // 定义的可比区间，这样手动切到「完整周期」时 tooltip 能如实说明对比的是整个上一周/月。
+        let defined = r.window;
+        let a = (r.dataWindow && r.dataWindow.start && r.dataWindow.end) ? r.dataWindow : defined;
+        let b = r.compareWindow;
         let sp = !!(b && b.samePeriod);
         let zhTag = sp ? '（同期同口径）' : '';
         let enTag = sp ? ' (same-period)' : '';
@@ -12481,7 +12503,30 @@ function applyChartAnalyticsI18N() {
 
     function setupDragAndDrop(el, type, id) {
         el.draggable = true;
+        // 图表画布内的手势（dataZoom 滑块拖柄、inside 平移、tooltip）不能触发卡片的原生
+        // HTML5 拖拽：浏览器会把整张卡片连图一起拖走，并且吞掉后续 mousemove，滑块只挪得动
+        // 一点点，手感很「粘」。排序拖拽仍从标题栏 / 来源 / 卡片空白处发起，画布内只在
+        // 本次手势期间临时关掉 draggable，松手即恢复。
+        let chartGesture = false;
+        el.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;   // 右键/中键不参与，避免上下文菜单吞掉 pointerup 后状态卡住
+            let t = e.target;
+            chartGesture = !!(t && t.closest && t.closest('.chart-container'));
+            el.draggable = !chartGesture; // 每次按下都重置，任何中断的手势都不会让卡片失去排序能力
+            if (!chartGesture) return;
+            let restore = () => {
+                el.draggable = true;
+                chartGesture = false;
+                window.removeEventListener('pointerup', restore, true);
+                window.removeEventListener('pointercancel', restore, true);
+                window.removeEventListener('dragend', restore, true);
+            };
+            window.addEventListener('pointerup', restore, true);
+            window.addEventListener('pointercancel', restore, true);
+            window.addEventListener('dragend', restore, true);
+        }, true);
         el.addEventListener('dragstart', (e) => {
+            if (chartGesture || el.draggable === false) { e.preventDefault(); return; }
             e.dataTransfer.setData('text/plain', JSON.stringify({ type, id }));
             e.dataTransfer.effectAllowed = 'move';
             el.classList.add('dragging');
