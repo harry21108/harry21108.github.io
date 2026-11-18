@@ -3906,6 +3906,25 @@
         (values || []).forEach(v => { let n = Number(v); if (isFinite(n)) max = Math.max(max, Math.abs(n)); });
         return unitLadderInfo(max, unit);
     }
+    // 主图 groupMap 的形态：单系列=数字、多系列={子项: 数}、Y2={value, sum, count...}。
+    // 升档要按「轴上真正能达到的最大值」判断：堆叠图取每个 X 上各子项的绝对值之和（堆叠高度），
+    // 其余取子项最大绝对值；否则 Number(对象)=NaN 会让多系列图整图不升档。
+    function chartLadderValues(map, stacked) {
+        let out = [];
+        Object.keys(map || {}).forEach(k => {
+            let v = map[k];
+            if (v && typeof v === 'object') {
+                if (typeof v.value === 'number') { if (isFinite(v.value)) out.push(Math.abs(v.value)); return; }
+                let nums = Object.keys(v).map(s => Number(v[s])).filter(n => isFinite(n));
+                if (!nums.length) return;
+                out.push(stacked ? nums.reduce((a, b) => a + Math.abs(b), 0) : Math.max.apply(null, nums.map(n => Math.abs(n))));
+                return;
+            }
+            let n = Number(v);
+            if (isFinite(n)) out.push(Math.abs(n));
+        });
+        return out;
+    }
     // 把 option 的系列数值按升档倍数折算；轴名由调用方改成目标单位，
     // 刻度 / tooltip 仍用原单位走 adaptAxisValueToUnit，避免二次换算。
     function scaleOptionSeriesByLadder(opt, f1, f2) {
@@ -3926,6 +3945,17 @@
             if (s.markLine && Array.isArray(s.markLine.data)) s.markLine.data = s.markLine.data.map(d => one(d, f));
             if (s.markPoint && Array.isArray(s.markPoint.data)) s.markPoint.data = s.markPoint.data.map(d => one(d, f));
         });
+        // 轴的 min/max 也是用原始值算出来的（computeNiceMin 等），系列折算后必须同比缩放，
+        // 否则非堆积图会出现「数据在底部、轴从原量级开始」的空白图。
+        const scaleBounds = (a, f) => {
+            if (!a || a.type !== 'value' || f === 1) return;
+            if (typeof a.min === 'number' && isFinite(a.min)) a.min = a.min / f;
+            if (typeof a.max === 'number' && isFinite(a.max)) a.max = a.max / f;
+        };
+        [].concat(opt.yAxis || []).forEach((a, i) => scaleBounds(a, Array.isArray(opt.yAxis) && i === 1 ? f2 : f1));
+        let xa0 = (Array.isArray(opt.xAxis) ? opt.xAxis[0] : opt.xAxis) || {};
+        let ya0 = (Array.isArray(opt.yAxis) ? opt.yAxis[0] : opt.yAxis) || {};
+        if (xa0.type === 'value' && ya0.type === 'category') scaleBounds(xa0, f1);
     }
     function summFmt(num, col, isEn) {
         let v = Number(num);
@@ -8358,6 +8388,15 @@
         for (let i = 0; i < s.length; i++) w += /[\u4e00-\u9fa5\uff00-\uffef]/.test(s[i]) ? fontSize : fontSize * 0.56;
         return Math.ceil(w);
     }
+    // 纵向图 X 轴末刻度标签以类目点为中心画，grid.right 只留 32px 时
+    // "Nov 4, 2026" 这类英文日期的右半截会被画布裁掉（用户截图）。
+    // 按实测文本宽度预留「半个标签 + 呼吸」，短标签仍维持原有 32px。
+    function xLastLabelRightNeed(labels, fontSize, fontFamily) {
+        if (!Array.isArray(labels) || !labels.length) return 0;
+        let last = labels[labels.length - 1];
+        if (last === null || last === undefined || last === '') return 0;
+        return Math.ceil(measureTextPx(last, fontSize || 12, fontFamily) / 2 + 6);
+    }
     // 收集绑定到第 yi 根 Y 轴的全部系列数据（数字或 {value} 项）
     function collectYAxisSeriesValues(option, yi) {
         let vals = [];
@@ -8849,6 +8888,10 @@
         let ladderDiv = 1;
         let convUnit = (v) => (typeof v === 'number' && !isNaN(v)) ? (v / (enDiv * ladderDiv)) : v;
         function setupAnalysisLadder(values) {
+            // 每次重算都从原单位出发；瀑布图会用「总量 + Δ」二次调用，不能沿用上次结果。
+            ladderDiv = 1;
+            axisUnitName = unitY1 || yLabel;
+            try { delete chartLadderAxisUnit['chart_' + config.id]; } catch (e) {}
             if (unitY1 === '%' || /百分点|\bpp\b/i.test(unitY1)) return;
             let L = unitLadderForValues(values.map(v => Number(v) / (enDiv || 1)), unitY1);
             ladderDiv = L.factor;
@@ -9210,12 +9253,32 @@
 
         // ---- 瀑布图（变化桥）：期初总量 → 各省增减 → 期末总量 ----
         if (config.type === 'waterfall') {
+            // 仅当用户显式配置了本单位升档阶梯（如 Kt→Mt）时，才用「期初/期末总量 + 各省 Δ」
+            // 重判档位：Δ 常远小于总量，只看 Δ 会让 17,000 Kt 的瀑布图停在 Kt。
+            // 内置阶梯保持原口径（按 Δ 判断），不改变既有中文 万吨 / 英文 Mt 图的展示。
+            let customLadder = !!(dashboardConfig && dashboardConfig.unitLadders && dashboardConfig.unitLadders[unitY1]);
+            let rawCurTotal = 0, rawPrevTotal = 0, totalDiv = 1;
+            if (customLadder) {
+                Object.keys(xAgg).forEach(k => {
+                    let raw = calcValueForField(xAgg[k], yField, agg, calcOpts);
+                    if (typeof raw === 'number' && isFinite(raw)) rawCurTotal += raw;
+                });
+                let rawDeltas = Object.keys(m.byX).map(k => m.byX[k]);
+                rawPrevTotal = rawCurTotal - rawDeltas.reduce((s, v) => s + (Number(v) || 0), 0);
+                setupAnalysisLadder([rawCurTotal, rawPrevTotal].concat(rawDeltas));
+                entries = Object.keys(m.byX).map(k => ({ k, v: convUnit(m.byX[k]) }))
+                    .filter(e => e.v !== null && e.v !== undefined && !isNaN(e.v));
+                if (!entries.length) { chart.setOption(analysisEmptyOption(isEn ? 'No data' : '暂无数据'), true); return; }
+                totalDiv = (enDiv || 1) * (ladderDiv || 1);
+            }
             sortByValDesc(entries, e => e.v); // 增产在前、减产在后
             entries = foldDecreaseTail(entries, 2);
             entries = foldTopN(entries, e => e.v);
-            let curTotal = 0;
-            Object.keys(xAgg).forEach(k => { let v = convUnit(calcValueForField(xAgg[k], yField, agg, calcOpts)); if (typeof v === 'number' && !isNaN(v)) curTotal += v; });
-            let prevTotal = curTotal - entries.reduce((s, e) => s + e.v, 0);
+            let curTotal = customLadder ? rawCurTotal / totalDiv : 0;
+            if (!customLadder) {
+                Object.keys(xAgg).forEach(k => { let v = convUnit(calcValueForField(xAgg[k], yField, agg, calcOpts)); if (typeof v === 'number' && !isNaN(v)) curTotal += v; });
+            }
+            let prevTotal = customLadder ? rawPrevTotal / totalDiv : curTotal - entries.reduce((s, e) => s + e.v, 0);
             let startLabel = isEn ? 'Start' : '期初';
             let endLabel = isEn ? 'End' : '期末';
             let labels = [startLabel].concat(entries.map(e => (e.isOtherBucket) ? othersLabel : getMappedValue(e.k, lang))).concat([endLabel]);
@@ -10281,10 +10344,13 @@
         }
 
         // bak183：按当前图数据决定升档级别；轴名换成目标单位，系列数值在 setOption 前统一折算。
-        let y1Div = (unitY1 === '%' || /百分点|\bpp\b/i.test(unitY1)) ? 1 : (displayUnitDivisor(config.yField, isEn) || 1);
-        let y2Div = (!config.yField2 || unitY2 === '%' || /百分点|\bpp\b/i.test(unitY2)) ? 1 : (displayUnitDivisor(config.yField2, isEn) || 1);
-        ladderY1 = unitLadderForValues(Object.keys(groupMap).map(k => Number(groupMap[k]) / y1Div), unitY1);
-        ladderY2 = unitLadderForValues(Object.keys(groupMapY2 || {}).map(k => Number(groupMapY2[k]) / y2Div), unitY2);
+        // groupMap / groupMapY2 的数值在聚合阶段已按 displayUnitDivisor 折算过（英文 万吨→Mt 等），
+        // 这里不能再除一次除数，否则 1,631 Mt 会被当成 16.31 而永远不升档。
+        let ladderStacked = config.type.includes('stacked') || config.type === 'bar-horizontal'
+            || config.type === 'percent-area' || config.type === 'percent-bar-stacked'
+            || config.type === 'percent-bar-horizontal-stacked';
+        ladderY1 = unitLadderForValues(chartLadderValues(groupMap, ladderStacked), unitY1);
+        ladderY2 = unitLadderForValues(chartLadderValues(groupMapY2, false), unitY2);
         unitY1AxisName = ladderY1.unit || unitY1AxisName;
         unitY2AxisName = ladderY2.unit || unitY2AxisName;
         if (ladderY1.factor > 1) chartLadderAxisUnit['chart_' + config.id] = ladderY1.unit;
@@ -10998,13 +11064,14 @@
                 // 刻度标签按 ECharts 实际渲染族/号估宽（默认 'sans-serif' 12px），10 = 8px 边距 + 2px 呼吸，
                 // 避免 "35,000" 这类 6 字符英文刻度被画布右缘裁成 "35,00"（用户反馈）
                 let unitNeed = hasY2 ? 20 + unitW2 : 0;
-                let rightNeed = hasY2
-                    ? Math.max(10 + estimateYAxisLabelWidth(collectYAxisSeriesValues(option, 1), 12, fmtR, 'sans-serif'), unitNeed)
-                    : 32;
-                // 无次轴时固定 32（用户偏好：左右空白不要太大）；有次轴时按需加宽。
+                // X 轴末刻度（尤其英文日期 "Nov 4, 2026"）按半宽额外留白，短标签仍维持 32px。
+                let xLastNeed = xLastLabelRightNeed(xDataLabels, 12, 'sans-serif');
+                let rightNeed = Math.max(32, xLastNeed);
+                if (hasY2) rightNeed = Math.max(rightNeed,
+                    10 + estimateYAxisLabelWidth(collectYAxisSeriesValues(option, 1), 12, fmtR, 'sans-serif'), unitNeed);
                 // 上限 140 只钳刻度标签需求，单位名需求本身不被钳（超长单位也必须完整显示）。
-                let rightCap = hasY2 ? Math.max(140, Math.ceil(unitNeed)) : 140;
-                let newRight = hasY2 ? Math.min(rightCap, Math.max(32, Math.ceil(rightNeed))) : 32;
+                let rightCap = hasY2 ? Math.max(140, Math.ceil(unitNeed)) : Math.max(140, Math.ceil(xLastNeed));
+                let newRight = Math.min(rightCap, Math.max(32, Math.ceil(rightNeed)));
                 if (Array.isArray(option.grid)) option.grid[0].right = newRight;
                 else option.grid.right = newRight;
             }
