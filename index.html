@@ -1024,6 +1024,8 @@
                     <option value="pareto-change" data-page-node-id="aParetoChg">变化贡献帕累托</option>
                     <option value="pareto-change-net" data-page-node-id="aParetoChgNet">变化贡献帕累托·净贡献</option>
                     <option value="tornado" data-page-node-id="aTornado">增减双向条形图</option>
+                    <option value="tornado-stacked" data-page-node-id="aTornadoStacked">增减双向堆叠条形图</option>
+                    <option value="tornado-stacked-column" data-page-node-id="aTornadoStackedCol">增减双向堆叠柱状图</option>
                     <option value="waterfall" data-page-node-id="aWaterfall">瀑布图 (变化桥)</option>
                     <option value="flow-matrix" data-page-node-id="aFlowMatrix">流向矩阵热力图</option>
                     <option value="flow-sankey" data-page-node-id="aFlowSankey">多阶段流向图 (桑基)</option>
@@ -4332,7 +4334,7 @@
                 if (yearField) config.subField = yearField;
             }
         }
-        if (config.type === 'pareto' || config.type === 'pareto-change' || config.type === 'pareto-change-net' || config.type === 'tornado' || config.type === 'waterfall') {
+        if (config.type === 'pareto' || config.type === 'pareto-change' || config.type === 'pareto-change-net' || config.type === 'tornado' || config.type === 'tornado-stacked' || config.type === 'tornado-stacked-column' || config.type === 'waterfall') {
             if (!config.periodType) config.periodType = 'yoy';
         }
         let t = config.type || '';
@@ -6611,6 +6613,95 @@
         } catch (e) { return null; }
     }
 
+    /**
+     * bak192：增减双向堆叠条形图专用 —— 按「X 类别 × 系列维度取值」分别算当期−对比期变化量。
+     * 期次推导与 calcCategoryPeriodMetrics 完全一致（同一窗口/同比环比口径），仅分组键改为复合键，
+     * 不改动原函数、对既有三类分析图零影响。
+     * 返回 { byCell: {x\u0001sub: Δ}, xVals:[...], subVals:[...], prevKeys:[...] }。
+     */
+    function calcCategorySubPeriodMetrics(o) {
+        try {
+            let scopedRows = (o && o.scopedRows) || [];
+            let fullRows = (o && o.fullRows) || [];
+            let dateCol = o && o.dateCol, g = o && o.granularity;
+            let xField = o && o.xField, subField = o && o.subField;
+            if (!scopedRows.length || !fullRows.length || !dateCol || !g || !xField || !subField) return null;
+            // 当期实际出现的期次
+            let curDateStrs = [], seenD = Object.create(null);
+            scopedRows.forEach(d => {
+                let str = String(d[dateCol] || '');
+                if (str && !seenD[str]) { seenD[str] = 1; curDateStrs.push(str); }
+            });
+            if (!curDateStrs.length) return null;
+            // 全量期序号 → 日期字符串
+            let ordMap = Object.create(null), ords = [];
+            fullRows.forEach(d => {
+                let str = String(d[dateCol] || '');
+                if (!str) return;
+                let c = parsePeriodKey(str, dateCol);
+                if (!c) return;
+                let ord = periodOrdinal(c, g);
+                if (ord === null || isNaN(ord)) return;
+                if (ordMap[ord] === undefined) ordMap[ord] = str;
+                ords.push(ord);
+            });
+            if (!ords.length) return null;
+            ords = Array.from(new Set(ords)).sort((a, b) => a - b);
+            // 当期各期次平移到对比期；短周期允许缺期回退到最近前一期
+            let wantKeys = Object.create(null);
+            curDateStrs.forEach(str => {
+                let c = parsePeriodKey(str, dateCol);
+                if (!c) return;
+                let pc = shiftPeriod(c, g, (o && o.rateType) || 'yoy');
+                if (!pc) return;
+                let tOrd = periodOrdinal(pc, g);
+                if (tOrd === null || isNaN(tOrd)) return;
+                let key = ordMap[tOrd];
+                if (key === undefined && ((o && o.rateType) === 'dod' || (o && o.rateType) === 'wow' || (o && o.rateType) === 'mom')) {
+                    let lo = 0, hi = ords.length - 1, best = -1;
+                    while (lo <= hi) {
+                        let mid = (lo + hi) >> 1;
+                        if (ords[mid] <= tOrd) { best = mid; lo = mid + 1; } else hi = mid - 1;
+                    }
+                    if (best >= 0) key = ordMap[ords[best]];
+                }
+                if (key !== undefined) wantKeys[key] = 1;
+            });
+            let wantList = Object.keys(wantKeys);
+            if (!wantList.length) return null;
+            let cellKey = (d) => {
+                let x = getXValue(d, xField);
+                let sb = getXValue(d, subField);
+                if (x === null || x === undefined || x === '' || sb === null || sb === undefined || sb === '') return '';
+                return String(x) + '\u0001' + String(sb);
+            };
+            let prevByCell = Object.create(null), curByCell = Object.create(null);
+            fullRows.forEach(d => {
+                let str = String(d[dateCol] || '');
+                if (!wantKeys[str]) return;
+                let k = cellKey(d);
+                if (!k) return;
+                (prevByCell[k] || (prevByCell[k] = [])).push(d);
+            });
+            if (!Object.keys(prevByCell).length) return null;
+            scopedRows.forEach(d => {
+                let k = cellKey(d);
+                if (!k) return;
+                (curByCell[k] || (curByCell[k] = [])).push(d);
+            });
+            let byCell = Object.create(null), xSet = Object.create(null), subSet = Object.create(null);
+            Object.keys(curByCell).forEach(k => {
+                let v = calcCategoryPeriodValue(curByCell[k], prevByCell[k] || [], o.valueField, o.agg, 'diff', o.calcOpts);
+                if (v === null || v === undefined || isNaN(v)) return;
+                byCell[k] = v;
+                let p = k.split('\u0001');
+                xSet[p[0]] = 1; subSet[p[1]] = 1;
+            });
+            if (!Object.keys(byCell).length) return null;
+            return { byCell: byCell, xVals: Object.keys(xSet), subVals: Object.keys(subSet), prevKeys: wantList };
+        } catch (e) { return null; }
+    }
+
     /** 解析率值单元格：兼容 12 / "12%" / 0.12 三种存法（返回数值与是否带 % 号） */
     function parseRateCellNumber(v) {
         if (v === null || v === undefined || v === '') return null;
@@ -8510,7 +8601,7 @@
     const ANALYSIS_COL_LINE = ANALYSIS_LINE_PALETTE[0];
     // bak138：4 类分析图表的类型判定（下载图/嵌入页需要按类型做紧凑布局调整）
     function isAnalysisChartType(type) {
-        return type === 'pareto' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado' || type === 'waterfall';
+        return type === 'pareto' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado' || type === 'tornado-stacked' || type === 'tornado-stacked-column' || type === 'waterfall';
     }
     // 组合图族：主度量 + Y2 次度量（双 Y 轴，次度量恒为折线）。
     // combo = 柱状 + 折线；area-line = 面积 + 折线。两者共用 Y2 字段、次轴单位换算、
@@ -8839,9 +8930,9 @@
         let g = getDateGranularity(scopedData, dateColumn) || getDateGranularity(baseData, dateColumn) || getDateGranularity(filteredData, dateColumn);
         if (!dateColumn || !g) {
             let msg = isEn
-                ? (config.type === 'waterfall' ? 'Waterfall' : ((config.type === 'pareto-change' || config.type === 'pareto-change-net') ? 'Contribution Pareto' : 'Tornado'))
+                ? (config.type === 'waterfall' ? 'Waterfall' : ((config.type === 'pareto-change' || config.type === 'pareto-change-net') ? 'Contribution Pareto' : (config.type === 'tornado-stacked' ? 'Stacked Tornado' : (config.type === 'tornado-stacked-column' ? 'Stacked Tornado Column' : 'Tornado'))))
                     + ' needs a date field + a time scope (Latest period / a specific month) to compare categories.'
-                : (config.type === 'waterfall' ? '瀑布图' : ((config.type === 'pareto-change' || config.type === 'pareto-change-net') ? '变化贡献帕累托' : '增减双向图'))
+                : (config.type === 'waterfall' ? '瀑布图' : ((config.type === 'pareto-change' || config.type === 'pareto-change-net') ? '变化贡献帕累托' : (config.type === 'tornado-stacked' ? '增减双向堆叠图' : (config.type === 'tornado-stacked-column' ? '增减双向堆叠柱状图' : '增减双向图'))))
                     + '需要 X 轴为日期维度且设定时间范围（最新一期/具体某月）才能对比类别变化。';
             chart.setOption(analysisEmptyOption(msg), true);
             return;
@@ -8878,6 +8969,189 @@
             opt.color = [barColor];
             opt.series = [{ name: title, type: 'bar', data: entries.map(e => ({ value: e.v, itemStyle: { color: barColor } })), barMaxWidth: 44 }];
             opt.legend.data = [title];
+            finalizeAnalysisOption(opt, isEn);
+            chart.setOption(opt, true);
+            return;
+        }
+
+        // ---- bak192：增减双向堆叠条形图（tornado-stacked）----
+        // 按「X 类别 × 系列维度取值」各自算当期−对比期变化量 Δ；
+        // 同一 stack 内 ECharts 自动把正值堆到 0 右侧、负值堆到 0 左侧，每段一色。
+        if (config.type === 'tornado-stacked') {
+            if (!config.subField) {
+                let msg = isEn
+                    ? 'Stacked tornado needs a series / segment dimension (e.g. product, province) to split each bar into coloured segments.'
+                    : '增减双向堆叠条形图需要选择「系列维度」（如品种、省份），用于把每根条拆成多段不同颜色的增减段。';
+                chart.setOption(analysisEmptyOption(msg), true);
+                return;
+            }
+            let sm = calcCategorySubPeriodMetrics({
+                scopedRows: scopedData, fullRows: filteredData, dateCol: dateColumn, granularity: g,
+                xField: config.xField, subField: config.subField, valueField: yField, agg: agg,
+                rateType: periodType, kind: 'diff', calcOpts: calcOpts
+            });
+            if (!sm || !sm.xVals.length || !sm.subVals.length) {
+                let reason = isEn ? 'No comparable period found for the selected segment dimension.'
+                    : '所选系列维度未找到可对比的期次数据。';
+                chart.setOption(analysisEmptyOption(reason), true); return;
+            }
+            // 单位升档：与其余分析图同口径，用全部 cell 变化量取阶梯
+            setupAnalysisLadder(Object.keys(sm.byCell).map(k => sm.byCell[k]));
+            let cellV = Object.create(null);
+            Object.keys(sm.byCell).forEach(k => {
+                let v = convUnit(sm.byCell[k]);
+                if (v !== null && v !== undefined && !isNaN(v)) cellV[k] = v;
+            });
+            // X 类别按「各段 |Δ| 合计」降序
+            let ents = sm.xVals.map(x => ({
+                k: x, v: sm.subVals.reduce((acc, sv) => acc + Math.abs(cellV[x + '\u0001' + sv] || 0), 0)
+            }));
+            sortByAbsDesc(ents, e => e.v);
+            // TopN：尾部类别的各段值累加成「其它」
+            let topN2 = (config.topN && config.topN !== 'all') ? parseInt(config.topN) : null;
+            if (topN2 && ents.length > topN2) {
+                let head = ents.slice(0, topN2), tail = ents.slice(topN2);
+                sm.subVals.forEach(sv => {
+                    cellV[othersLabel + '\u0001' + sv] = tail.reduce((acc, e) => acc + (cellV[e.k + '\u0001' + sv] || 0), 0);
+                });
+                ents = head.concat([{ k: othersLabel, v: tail.reduce((acc, e) => acc + e.v, 0), isOtherBucket: true }]);
+            }
+            // category 轴自下而上绘制：反转后最大项在最上、「其它」沉底
+            ents.reverse();
+            let labels2 = ents.map(e => getMappedValue(e.k, lang));
+            let subNames = sm.subVals.map(sv => getMappedValue(sv, lang));
+            let palette = getDynamicPalette(sm.subVals.length, 'nonLine');
+            // 对称数值轴：约 6 格，取整齐步长与目标上限
+            let maxAbs = 0;
+            Object.keys(cellV).forEach(k => { let v = cellV[k]; if (v !== null && v !== undefined) maxAbs = Math.max(maxAbs, Math.abs(v)); });
+            let stepRaw = Math.max(maxAbs, 1) / 6;
+            let exp10 = Math.pow(10, Math.floor(Math.log10(stepRaw)));
+            let frac = stepRaw / exp10;
+            let niceStep = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 2.5 ? 2.5 : frac <= 5 ? 5 : 10;
+            let step = niceStep * exp10;
+            let lim = Math.max(step, Math.ceil(maxAbs / step) * step);
+            let axisFmt = (val) => (window.currentLang === 'en'
+                ? (typeof val === 'number' ? val.toLocaleString('en-US') : val) : val);
+            let opt = {
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, confine: true },
+                legend: { top: 4, left: 48, right: 32, type: 'scroll', itemGap: 10, itemWidth: 12, itemHeight: 14, textStyle: { fontSize: 11, fontFamily: ANALYSIS_FONT } },
+                grid: { left: 48, right: 32, top: 56, bottom: 42, containLabel: true },
+                xAxis: {
+                    // 横向数值轴：单位名放轴下方居中（nameLocation=end 会被右边缘裁成半个字）
+                    type: 'value', name: axisUnitName, nameLocation: 'middle', nameGap: 30,
+                    min: -lim, max: lim, interval: step,
+                    nameTextStyle: { fontSize: 11, color: '#6B7280' },
+                    axisLabel: { color: '#6E7079', fontSize: 11, formatter: axisFmt },
+                    splitLine: { lineStyle: { color: '#EEF0F2' } },
+                    axisLine: { onZero: true, lineStyle: { color: '#444441', width: 1.2 } }
+                },
+                yAxis: {
+                    type: 'category', data: labels2,
+                    axisLabel: { color: '#6E7079', fontSize: 11, interval: 0 },
+                    axisLine: { lineStyle: { color: '#D1D5DB' } }, axisTick: { show: false }
+                },
+                color: palette,
+                series: sm.subVals.map((sv, i) => ({
+                    name: subNames[i], type: 'bar', stack: 'ts', barMaxWidth: 44,
+                    data: ents.map(e => {
+                        let v = cellV[e.k + '\u0001' + sv];
+                        return (v === null || v === undefined || isNaN(v)) ? null : v;
+                    }),
+                    itemStyle: { color: palette[i % palette.length] }
+                }))
+            };
+            opt.legend.data = subNames;
+            finalizeAnalysisOption(opt, isEn);
+            chart.setOption(opt, true);
+            return;
+        }
+
+        // ---- bak193：增减双向堆叠柱状图（tornado-stacked-column，纵向版）----
+        // 与横向版共用 calcCategorySubPeriodMetrics 的 Δ 口径；分类在 X 轴、数值在 Y 轴，
+        // 同一 stack 内 ECharts 把正值堆到 0 上方、负值堆到 0 下方，每段一色。
+        if (config.type === 'tornado-stacked-column') {
+            if (!config.subField) {
+                let msg = isEn
+                    ? 'Stacked tornado column needs a series / segment dimension (e.g. product, province) to split each column into coloured segments.'
+                    : '增减双向堆叠柱状图需要选择「系列维度」（如品种、省份），用于把每根柱拆成多段不同颜色的增减段。';
+                chart.setOption(analysisEmptyOption(msg), true);
+                return;
+            }
+            let sm = calcCategorySubPeriodMetrics({
+                scopedRows: scopedData, fullRows: filteredData, dateCol: dateColumn, granularity: g,
+                xField: config.xField, subField: config.subField, valueField: yField, agg: agg,
+                rateType: periodType, kind: 'diff', calcOpts: calcOpts
+            });
+            if (!sm || !sm.xVals.length || !sm.subVals.length) {
+                let reason = isEn ? 'No comparable period found for the selected segment dimension.'
+                    : '所选系列维度未找到可对比的期次数据。';
+                chart.setOption(analysisEmptyOption(reason), true); return;
+            }
+            setupAnalysisLadder(Object.keys(sm.byCell).map(k => sm.byCell[k]));
+            let cellV = Object.create(null);
+            Object.keys(sm.byCell).forEach(k => {
+                let v = convUnit(sm.byCell[k]);
+                if (v !== null && v !== undefined && !isNaN(v)) cellV[k] = v;
+            });
+            let ents = sm.xVals.map(x => ({
+                k: x, v: sm.subVals.reduce((acc, sv) => acc + Math.abs(cellV[x + '\u0001' + sv] || 0), 0)
+            }));
+            sortByAbsDesc(ents, e => e.v);
+            let topN2 = (config.topN && config.topN !== 'all') ? parseInt(config.topN) : null;
+            if (topN2 && ents.length > topN2) {
+                let head = ents.slice(0, topN2), tail = ents.slice(topN2);
+                sm.subVals.forEach(sv => {
+                    cellV[othersLabel + '\u0001' + sv] = tail.reduce((acc, e) => acc + (cellV[e.k + '\u0001' + sv] || 0), 0);
+                });
+                ents = head.concat([{ k: othersLabel, v: tail.reduce((acc, e) => acc + e.v, 0), isOtherBucket: true }]);
+            }
+            // 纵向 category 轴自左向右绘制：不反转，最大项在最左、「其它」在最右
+            let labels2 = ents.map(e => getMappedValue(e.k, lang));
+            let subNames = sm.subVals.map(sv => getMappedValue(sv, lang));
+            let palette = getDynamicPalette(sm.subVals.length, 'nonLine');
+            let maxAbs = 0;
+            Object.keys(cellV).forEach(k => { let v = cellV[k]; if (v !== null && v !== undefined) maxAbs = Math.max(maxAbs, Math.abs(v)); });
+            let stepRaw = Math.max(maxAbs, 1) / 6;
+            let exp10 = Math.pow(10, Math.floor(Math.log10(stepRaw)));
+            let frac = stepRaw / exp10;
+            let niceStep = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 2.5 ? 2.5 : frac <= 5 ? 5 : 10;
+            let step = niceStep * exp10;
+            let lim = Math.max(step, Math.ceil(maxAbs / step) * step);
+            let axisFmt = (val) => (window.currentLang === 'en'
+                ? (typeof val === 'number' ? val.toLocaleString('en-US') : val) : val);
+            let cw = (chart && typeof chart.getWidth === 'function') ? chart.getWidth() : 0;
+            let ch = (chart && typeof chart.getHeight === 'function') ? chart.getHeight() : 0;
+            let compact = (ch > 0 && ch < 320) || (cw > 0 && cw < 460);
+            let rot = (!compact && labels2.length > 5) ? 30 : 0;
+            let fs = compact ? 10 : 11;
+            let opt = {
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, confine: true },
+                legend: { top: 4, left: 48, right: 32, type: 'scroll', itemGap: 10, itemWidth: 12, itemHeight: 14, textStyle: { fontSize: fs, fontFamily: ANALYSIS_FONT } },
+                grid: { left: 48, right: 32, top: 56, bottom: compact ? 24 : (rot ? 52 : 36), containLabel: true },
+                xAxis: {
+                    type: 'category', data: labels2,
+                    axisLabel: { color: '#6E7079', fontSize: fs, showMinLabel: true, showMaxLabel: true, hideOverlap: !rot, interval: rot ? 0 : 'auto', rotate: rot },
+                    axisLine: { lineStyle: { color: '#D1D5DB' } }, axisTick: { show: false }
+                },
+                yAxis: {
+                    // 纵向数值轴：0 居中；单位名交给 finalizeAnalysisOption 统一布局（与瀑布/帕累托同路径）
+                    type: 'value', name: axisUnitName, min: -lim, max: lim, interval: step,
+                    nameTextStyle: { fontSize: 11, color: '#6B7280' },
+                    axisLabel: { color: '#6E7079', fontSize: 11, formatter: axisFmt },
+                    splitLine: { lineStyle: { color: '#EEF0F2' } },
+                    axisLine: { onZero: true, lineStyle: { color: '#444441', width: 1.2 } }
+                },
+                color: palette,
+                series: sm.subVals.map((sv, i) => ({
+                    name: subNames[i], type: 'bar', stack: 'ts', barMaxWidth: 44,
+                    data: ents.map(e => {
+                        let v = cellV[e.k + '\u0001' + sv];
+                        return (v === null || v === undefined || isNaN(v)) ? null : v;
+                    }),
+                    itemStyle: { color: palette[i % palette.length] }
+                }))
+            };
+            opt.legend.data = subNames;
             finalizeAnalysisOption(opt, isEn);
             chart.setOption(opt, true);
             return;
@@ -9605,7 +9879,7 @@
 
         // 第九十轮：分析类图表（帕累托 / 变化贡献帕累托 / 增减双向 / 瀑布）短路返回，
         // 复用上面已准备好的 scopedData/baseData/filteredData/chartData，自建完整 option，不进主链路。
-        if (config.type === 'pareto' || config.type === 'pareto-change' || config.type === 'pareto-change-net' || config.type === 'tornado' || config.type === 'waterfall') {
+        if (config.type === 'pareto' || config.type === 'pareto-change' || config.type === 'pareto-change-net' || config.type === 'tornado' || config.type === 'tornado-stacked' || config.type === 'tornado-stacked-column' || config.type === 'waterfall') {
             renderAnalysisChart(chart, config, { scopedData: scopedData, baseData: baseData, filteredData: filteredData, chartData: chartData, calcOpts: calcOpts, isEn: isEn, dateColumn: dateColumn });
             return;
         }
@@ -11368,9 +11642,9 @@
         if (y2NameGrp) y2NameGrp.style.display = isComboChartType(type) ? 'block' : 'none';
         // 系列/堆叠维度在柱状图、条形图、折线图、面积图、组合图、季节图中均可用
         // 分析类图表（帕累托/瀑布/增减双向）为单系列按 X 维度聚合，不需要「系列/对比维度」
-        let isAnalysisType = (type === 'pareto' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado' || type === 'waterfall');
+        let isAnalysisType = (type === 'pareto' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado' || type === 'tornado-stacked' || type === 'tornado-stacked-column' || type === 'waterfall');
         let hasSub = ((type.includes('bar') || type.includes('horizontal') || type === 'line' || type.includes('area') || isComboChartType(type) || type === 'seasonal-lines') && !isAnalysisType)
-            || type === 'flow-matrix' || type === 'flow-sankey';
+            || type === 'flow-matrix' || type === 'flow-sankey' || type === 'tornado-stacked' || type === 'tornado-stacked-column';
         document.getElementById('chartSubGroup').style.display = hasSub ? 'block' : 'none';
         // bak145：流向图里「系列/对比维度」其实是第 2 阶段 / 目的地，不用通用文案
         let subLbl = document.querySelector('#chartSubGroup > label');
@@ -11379,7 +11653,7 @@
             : (isEnUI ? 'Series / comparison dimension (optional)' : '系列 / 对比维度 (可选)');
         // 对比期（变化基准）仅 waterfall / 变化贡献帕累托(含净贡献) / 增减双向条形 需要；帕累托图用当期值，不需要
         let ptGrp = document.getElementById('chartPeriodTypeGroup');
-        if (ptGrp) ptGrp.style.display = (type === 'waterfall' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado') ? 'block' : 'none';
+        if (ptGrp) ptGrp.style.display = (type === 'waterfall' || type === 'pareto-change' || type === 'pareto-change-net' || type === 'tornado' || type === 'tornado-stacked' || type === 'tornado-stacked-column') ? 'block' : 'none';
         // 分析类图表自己按「对比期」算变化量，Y 主度量必须为基础指标；
         // 将 ::rate:: / ::diff:: 虚拟指标选项置灰禁用，避免用户选到后空白（已选中的旧配置仍保留，渲染时自动折算）。
         let yEl = document.getElementById('chartYSel');
@@ -11401,7 +11675,14 @@
                 let subLabel = subVal ? getMappedValue(subVal, window.currentLang) : '';
                 let xLabel = xSel && xSel.value ? getMappedValue(xSel.value, window.currentLang) : '';
                 subHint.style.display = 'block';
-                if (subVal) {
+                if (type === 'tornado-stacked' || type === 'tornado-stacked-column') {
+                    let isCol = (type === 'tornado-stacked-column');
+                    subHint.innerHTML = isEnUI
+                        ? ('Each value of this field becomes one coloured segment. The chart computes (current − comparison period) for every category × segment: '
+                            + (isCol ? 'increases stack above zero, decreases stack below zero.' : 'increases stack right of zero, decreases stack left of zero.'))
+                        : ('该字段的每个取值生成图中一种颜色的一段。系统按「分类 × 该取值」自动计算（当期 − 对比期）变化量：'
+                            + (isCol ? '增加堆在 0 上方，减少堆在 0 下方。' : '增加堆在 0 右侧，减少堆在 0 左侧。'));
+                } else if (subVal) {
                     subHint.innerHTML = `已选「${subLabel}」：该字段的每个取值生成一条系列，`
                         + `可实现「${xLabel}」下不同 ${subLabel} 的并排对比`
                         + `（如不同月份 / 年份 / 品种）。取值过多时会自动归并为「其它」。`;
