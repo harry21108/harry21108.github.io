@@ -3934,7 +3934,18 @@
         const one = (v, f) => {
             if (typeof v === 'number') return isFinite(v) ? v / f : v;
             if (Array.isArray(v)) return v.map((x, i) => (i > 0 && typeof x === 'number') ? x / f : x);
-            if (v && typeof v === 'object' && typeof v.value === 'number') return Object.assign({}, v, { value: v.value / f });
+            if (v && typeof v === 'object' && typeof v.value === 'number') {
+                let o = Object.assign({}, v, { value: v.value / f });
+                // 历史区间带 / ±1σ 带的数据形态是 { value: 带宽, meta: {min, max} }。
+                // tooltip 显示的是 meta.min/max（见 applyAnalyticsTooltip），必须与 value 同步折算，
+                // 否则升档后主系列已是「亿吨」而区间带 tooltip 仍显示原始「万吨」（用户截图的混合单位）。
+                if (o.meta && typeof o.meta === 'object') {
+                    o.meta = Object.assign({}, o.meta);
+                    if (typeof o.meta.min === 'number' && isFinite(o.meta.min)) o.meta.min = o.meta.min / f;
+                    if (typeof o.meta.max === 'number' && isFinite(o.meta.max)) o.meta.max = o.meta.max / f;
+                }
+                return o;
+            }
             return v;
         };
         [].concat(opt.series || []).forEach(s => {
@@ -7780,7 +7791,11 @@
                 let rightTxt;
                 let getter = tooltipMeta[p.seriesName];
                 let m = null;
-                if (p.value && typeof p.value === 'object' && p.value.meta) m = p.value.meta;
+                // ECharts 轴触发时，data 项为 {value,meta} 的对象：p.value 是数字、p.data 才是原对象。
+                // meta 里的 min/max 已由 scaleOptionSeriesByLadder 折算到升档单位，必须优先读它；
+                // getter 读的是未折算的原始 histRange.meta/stat.band.meta，仅作无升档时的兜底。
+                if (p.data && typeof p.data === 'object' && p.data.meta) m = p.data.meta;
+                else if (p.value && typeof p.value === 'object' && p.value.meta) m = p.value.meta;
                 else if (typeof getter === 'function') m = getter(p.dataIndex);
                 if (m) {
                     rightTxt = tu.tooltipMin + ' ' + formatChartNumber(m.min) + ' / ' + tu.tooltipMax + ' ' + formatChartNumber(m.max);
@@ -11372,10 +11387,9 @@
         let seasonVals = [];
         seriesList.forEach(s => (s.data || []).forEach(v => { if (typeof v === 'number' && isFinite(v)) seasonVals.push(v); }));
         let seasonLadder = unitLadderForValues(seasonVals.map(v => v / (displayUnitDivisor(config.yField, isEn) || 1)), unitStr);
-        if (seasonLadder.factor > 1) {
-            seriesList.forEach(s => { if (Array.isArray(s.data)) s.data = s.data.map(v => (typeof v === 'number' ? v / seasonLadder.factor : v)); });
-            chartLadderAxisUnit['chart_' + config.id] = seasonLadder.unit;
-        }
+        // 单位升档折算统一推迟到所有 series（含随后 append 的区间带/±1σ 带）追加完成后，
+        // 与主图路径 scaleOptionSeriesByLadder 同一时机。此前在这里只缩放年份系列，
+        // 区间带随后用未缩放的原始值追加，导致年份线贴底、区间带仍在原量级（用户截图错乱）。
         let unitStrAxis = seasonLadder.unit || unitStr;
         let axisLabelConfig = { formatter: (val) => window.currentLang === 'en' ? (typeof val === 'number' ? adaptAxisValueToUnit(val, unitStr, isEn).toLocaleString('en-US') : val) : val };
 
@@ -11439,6 +11453,14 @@
                 }
             }
         } catch (eS) {}
+
+        // 单位升档：所有 series（年份系列 + 区间带 + ±1σ 带 + 参考线）此时已全部追加完成，
+        // 统一按升档倍数折算一次（与主图路径 scaleOptionSeriesByLadder 同一时机、同一函数）；
+        // scaleOptionSeriesByLadder 会连同 yAxis.min/max 一起缩放，保证轴与数据同量级。
+        if (seasonLadder.factor > 1) {
+            try { scaleOptionSeriesByLadder(option, seasonLadder.factor, 1); } catch (eL) {}
+            chartLadderAxisUnit['chart_' + config.id] = seasonLadder.unit;
+        }
 
         if (xKeys.length > 30) { option.dataZoom = [{ type: 'inside', start: 0, end: 100 }, { type: 'slider', bottom: 4, height: 14, left: '15%', right: '15%' }]; option.grid.bottom = 56; }
         // Y 轴单位名对齐（第十轮用户反馈截图1）：季节图两个渲染函数在本函数内提前 return，
