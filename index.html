@@ -1395,6 +1395,7 @@
     let dataSourceBinding = { excel: null, template: null };
     let __refreshSnapshot = null;
     let __pickerHandles = { excel: null, template: null };
+    let __dirHandles = { excel: null, template: null };
     const __pickerTypes = {
         excel: [{ description: 'Excel / CSV', accept: {
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx', '.xls'],
@@ -1404,6 +1405,9 @@
     };
     function isRealFileHandle(h) {
         return !!(h && typeof FileSystemFileHandle !== 'undefined' && h instanceof FileSystemFileHandle);
+    }
+    function isDirectoryHandle(h) {
+        return !!(h && h.kind === 'directory' && typeof h.getFileHandle === 'function');
     }
     function pickerStore(mode, kind, value) {
         return new Promise((resolve) => {
@@ -1424,6 +1428,39 @@
                 };
             } catch (e) { resolve(null); }
         });
+    }
+    async function getDefaultDirHandle(kind) {
+        if (isDirectoryHandle(__dirHandles[kind])) return __dirHandles[kind];
+        let h = await pickerStore('get', 'dir:' + kind);
+        if (isDirectoryHandle(h)) __dirHandles[kind] = h;
+        return __dirHandles[kind] || null;
+    }
+    async function readFromDefaultDir(kind, fileName) {
+        let dir = await getDefaultDirHandle(kind);
+        if (!dir || !fileName) return null;
+        try {
+            if (typeof dir.queryPermission === 'function' && dir.queryPermission({ mode: 'read' }) !== 'granted') {
+                if (typeof dir.requestPermission !== 'function' || await dir.requestPermission({ mode: 'read' }) !== 'granted') return null;
+            }
+            let h = await dir.getFileHandle(fileName);
+            let f = await h.getFile();
+            if (!f) return null;
+            await f.slice(0, Math.min(16, f.size)).arrayBuffer();
+            return { file: f, handle: h };
+        } catch (e) { return null; }
+    }
+    async function pickDefaultDir(kind) {
+        if (typeof window.showDirectoryPicker !== 'function') return null;
+        try {
+            let opts = { mode: 'read' };
+            let old = await getDefaultDirHandle(kind);
+            if (old) opts.startIn = old;
+            let dir = await window.showDirectoryPicker(opts);
+            if (!isDirectoryHandle(dir)) return null;
+            __dirHandles[kind] = dir;
+            await pickerStore('put', 'dir:' + kind, dir);
+            return dir;
+        } catch (e) { return null; }
     }
     function rememberSource(kind, file, handle) {
         if (!file) return;
@@ -1456,11 +1493,18 @@
         try {
             let opts = { multiple: false };
             if (__pickerTypes[kind]) opts.types = __pickerTypes[kind];
-            if (isRealFileHandle(__pickerHandles[kind])) opts.startIn = __pickerHandles[kind];
+            let startIn = null;
+            if (isRealFileHandle(__pickerHandles[kind])) startIn = __pickerHandles[kind];
+            else startIn = await getDefaultDirHandle(kind);
+            if (startIn) opts.startIn = startIn;
             let handles;
             try { handles = await window.showOpenFilePicker(opts); }
             catch (e) {
-                if (opts.types && !(e && e.name === 'AbortError')) handles = await window.showOpenFilePicker({ multiple: false });
+                if (opts.types && !(e && e.name === 'AbortError')) {
+                    let retryOpts = { multiple: false };
+                    if (startIn) retryOpts.startIn = startIn;
+                    handles = await window.showOpenFilePicker(retryOpts);
+                }
                 else throw e;
             }
             let handle = handles && handles[0];
@@ -1481,6 +1525,15 @@
             await f.slice(0, Math.min(16, f.size)).arrayBuffer();
             return f;
         } catch (err) {
+            let fromDir = await readFromDefaultDir(kind, entry.name);
+            if (!fromDir && await pickDefaultDir(kind)) fromDir = await readFromDefaultDir(kind, entry.name);
+            if (fromDir) {
+                entry.handle = fromDir.handle;
+                entry.file = fromDir.file;
+                __pickerHandles[kind] = fromDir.handle;
+                pickerStore('put', kind, fromDir.handle);
+                return fromDir.file;
+            }
             if (typeof window.showOpenFilePicker === 'function') {
                 let picked = await pickSourceWithHandle(kind);
                 if (picked === 'cancel') return null;
@@ -3046,7 +3099,12 @@
         if (c !== undefined) return c;
         let r = false;
         try {
-            r = Object.values(row).some(v => typeof v === 'string' && /合计|总计|小计|total|sum/i.test(v.trim()));
+            let skip = /^(note|备注|说明|memo|comment|remarks)$/i;
+            r = Object.keys(row).some(k => {
+                if (skip.test(String(k || '').trim())) return false;
+                let v = row[k];
+                return typeof v === 'string' && /合计|总计|小计|total|sum/i.test(v.trim());
+            });
         } catch (e) { r = false; }
         try { if (__totalRowWeak) __totalRowWeak.set(row, r); } catch (e) {}
         return r;
@@ -6168,6 +6226,111 @@
         let dec = Math.max(0, -Math.floor(Math.log10(magnitude) + 1e-9));
         let niceMin = Number((steps * magnitude).toFixed(dec));
         return niceMin > 0 ? niceMin : null;
+    }
+
+    // 双轴刻度对齐（bak208）：combo / area-line 的两条数值轴用同一个「格数」反推各自步长，
+    // 使横向网格线同时对准左右刻度。绝不启用 ECharts alignTicks —— 它会用主轴格数反推次轴范围，
+    // 裁掉落次轴自身数据（bak128 事故）。这里每轴都按自身数据算 min/max，只共享格数。
+    function alignDualAxisTicks(option) {
+        if (!option || !Array.isArray(option.yAxis) || option.yAxis.length < 2) return false;
+        let ax = [option.yAxis[0], option.yAxis[1]];
+        if (!ax[0] || !ax[1] || ax[0].type !== 'value' || ax[1].type !== 'value') return false;
+        let series = Array.isArray(option.series) ? option.series : [];
+        let bandStacks = new Set();
+        series.forEach(s => {
+            if (s && (s.name === HIST_RANGE_LOWER || s.name === STAT_BAND_LOWER) && s.stack) bandStacks.add(s.stack);
+        });
+        let isBandLower = s => !!s && (s.name === HIST_RANGE_LOWER || s.name === STAT_BAND_LOWER);
+        let isBandPart = s => !!s && (isBandLower(s) || (s.stack && bandStacks.has(s.stack)));
+        let per = [{ vals: [], stacks: {}, bandLo: new Map(), bandHi: new Map(), bandYi: new Map() },
+                   { vals: [], stacks: {}, bandLo: new Map(), bandHi: new Map(), bandYi: new Map() }];
+        series.forEach(s => {
+            if (!s || !Array.isArray(s.data)) return;
+            let yi = s.yAxisIndex === 1 ? 1 : 0;
+            s.data.forEach((d, i) => {
+                let v = (d && typeof d === 'object') ? d.value : d;
+                if (v === null || v === undefined || v === '' || isNaN(Number(v))) return;
+                let n = Number(v);
+                if (isBandPart(s)) {
+                    if (s.stack) {
+                        let bucket = isBandLower(s) ? per[yi].bandLo : per[yi].bandHi;
+                        let arr = bucket.get(s.stack) || [];
+                        arr[i] = n;
+                        bucket.set(s.stack, arr);
+                        per[yi].bandYi.set(s.stack, yi);
+                    } else if (isBandLower(s)) per[yi].vals.push(n);
+                    return;
+                }
+                if (s.stack) {
+                    let arr = per[yi].stacks[s.stack] || [];
+                    arr[i] = (arr[i] || 0) + n;
+                    per[yi].stacks[s.stack] = arr;
+                } else per[yi].vals.push(n);
+            });
+        });
+        per.forEach(p => {
+            Object.keys(p.stacks).forEach(k => p.stacks[k].forEach(v => { if (isFinite(v)) p.vals.push(v); }));
+            p.bandLo.forEach((loArr, st) => {
+                let hiArr = p.bandHi.get(st) || [];
+                loArr.forEach((lo, i) => {
+                    if (!isFinite(lo)) return;
+                    p.vals.push(lo);
+                    if (isFinite(hiArr[i])) p.vals.push(lo + hiArr[i]);
+                });
+            });
+        });
+        let data = per.map(p => {
+            let vals = p.vals.filter(v => isFinite(v));
+            if (!vals.length) return null;
+            return { min: Math.min.apply(null, vals), max: Math.max.apply(null, vals) };
+        });
+        if (!data[0] || !data[1]) return false;
+        const niceCeil = raw => {
+            if (!(raw > 0) || !isFinite(raw)) return 1;
+            let exp = Math.pow(10, Math.floor(Math.log10(raw)));
+            let f = raw / exp;
+            let m = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+            return m * exp;
+        };
+        const nextNice = step => {
+            let exp = Math.pow(10, Math.floor(Math.log10(step)));
+            let f = step / exp;
+            let m = f <= 1 ? 2 : f <= 2 ? 2.5 : f <= 2.5 ? 5 : 10;
+            return m * exp;
+        };
+        const clean = v => Number(v.toPrecision(12));
+        let best = null;
+        for (let N = 4; N <= 8; N++) {
+            let ranges = [], score = 0, ok = true;
+            for (let i = 0; i < 2; i++) {
+                let d = data[i];
+                let span = Math.max(d.max - d.min, Math.abs(d.max) * 0.08, 1);
+                let step = niceCeil(span / N);
+                let mn = (typeof ax[i].min === 'number' && isFinite(ax[i].min))
+                    ? ax[i].min : Math.floor(d.min / step) * step;
+                if (mn > d.min) mn = Math.floor(d.min / step) * step;
+                let tries = 0;
+                while (mn + N * step < d.max && tries++ < 12) step = nextNice(step);
+                if (mn + N * step < d.max) { ok = false; break; }
+                let mx = clean(mn + N * step);
+                let waste = ((mx - d.max) + (d.min - mn)) / span;
+                ranges.push({ min: clean(mn), max: mx, interval: clean(step) });
+                score += waste;
+            }
+            if (!ok) continue;
+            if (!best || score < best.score - 1e-9 ||
+                (Math.abs(score - best.score) < 1e-9 && Math.abs(N - 6) < Math.abs(best.N - 6))) {
+                best = { N: N, score: score, ranges: ranges };
+            }
+        }
+        if (!best) return false;
+        for (let i = 0; i < 2; i++) {
+            ax[i].min = best.ranges[i].min;
+            ax[i].max = best.ranges[i].max;
+            ax[i].interval = best.ranges[i].interval;
+            ax[i].splitNumber = best.N;
+        }
+        return true;
     }
 
     function findBaseValueColumn(rateField, preferCumulative) {
@@ -11324,6 +11487,9 @@
         // 原值（十万级万吨）与同看板其它图的「亿吨」口径不一致，故一并参与折算；
         // 占比与面积只取决于数值之间的相对比例，折算后不变。
         try { scaleOptionSeriesByLadder(option, ladderY1.factor, ladderY2.factor); } catch (e) {}
+        // 双轴刻度对齐必须放在升档折算之后：折算会同时改 series 与轴 min/max，
+        // 先对齐再折算会让 interval 停留在旧量级。
+        if (isComboChartType(config.type)) { try { alignDualAxisTicks(option); } catch (e) {} }
         // 缓存最近一次渲染的 option，作为 generateChartEmbedCode 的兜底
         // （让复制嵌入代码不依赖 ECharts 实例仍在内存中）
         try { lastRenderedChartOption[config.id] = option; lastRenderedChartId = config.id; } catch (e) {}
@@ -18457,7 +18623,7 @@ function setupOverlaySwipe() {
 
             // 第四十二轮：导出文件只保留展示功能 —— 上传区/构建器/模板输入等节点
             // （用户反馈：这些在导出文件里从不显示，没必要残留在源代码里）
-            ['#upload-container', '#actionZone', '#builderToolbar', '#dropZone', '#fileInput', '#templateInput', '#btn-refresh-data'].forEach(sel => {
+            ['#upload-container', '#actionZone', '#builderToolbar', '#dropZone', '#fileInput', '#templateInput', '#btn-refresh-data', '#embedToast'].forEach(sel => {
                 exportRoot.querySelectorAll(sel).forEach(el => { if (el.parentNode) el.parentNode.removeChild(el); });
             });
 
@@ -18600,6 +18766,10 @@ function setupOverlaySwipe() {
             window.__encryptedData = ${JSON.stringify(encryptedPayload)};
             window.isExportedHtml = true;
             window.currentLang = ${JSON.stringify(exportLang)};
+            document.addEventListener('DOMContentLoaded', function () {
+                var stale = document.getElementById('embedToast');
+                if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+            });
         `;
 
             const existingDataScript = exportRoot.querySelector('#embedded-data-script');
