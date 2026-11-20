@@ -1559,7 +1559,7 @@
             let hh = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
             let label = isEn
                 ? (changed ? `⟳ Refreshed ${hh} · ${rows.toLocaleString('en-US')} rows` : `⟳ Refreshed ${hh} · no data change`)
-                : (changed ? `⟳ 已刷新 ${hh} · ${rows.toLocaleString('zh-CN')} 行` : `⟳ 已刷新 ${hh} · 数据无变化`);
+                : (changed ? `⟳ 已刷新 ${hh} · ${rows} 行` : `⟳ 已刷新 ${hh} · 数据无变化`);
             let base = (snap.statusHTML || '').replace(/<span class="refresh-flag"[^>]*>[\s\S]*?<\/span>/g, '');
             st.innerHTML = base + `<span class="refresh-flag" id="refreshFlag">${label}</span>`;
         }
@@ -8918,6 +8918,21 @@
         // 轴名用「单位」（万吨/Mt…），与主链路一致；字段本身没带单位时退回度量名，避免轴上无名。
         let axisUnitName = unitY1 || yLabel;
 
+        // bak201：消除浮点尾数。Math.ceil(maxAbs/step)*step 这类计算会得到 1.2000000000000002，
+        // ECharts 把 min/max 原样当作端点刻度标签输出，中文 formatter 又直接返回原值，
+        // 于是 Y 轴最末刻度显示成 "-1.2000000000000002"。这里按有效位数规整到 12 位。
+        function tidyFloat(v) {
+            if (typeof v !== 'number' || !isFinite(v)) return v;
+            let r = Number(v.toPrecision(12));
+            return Object.is(r, -0) ? 0 : r;
+        }
+        // 刻度文本：中文不做千分位（保持既有观感），但先清掉浮点尾数。
+        function axisValueText(val) {
+            if (typeof val !== 'number') return val;
+            let t = tidyFloat(val);
+            return window.currentLang === 'en' ? t.toLocaleString('en-US') : String(t);
+        }
+
         function baseOption(labels, yName, hasY2, y2Name) {
             // 轴刻度：数值已由 convUnit 一次性折算到目标单位（英文 万吨→Mt 等），
             // 这里不能再叠加 adaptAxisValueToUnit —— 它是主链路"数据未折算"的兜底，
@@ -9087,9 +9102,8 @@
             let frac = stepRaw / exp10;
             let niceStep = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 2.5 ? 2.5 : frac <= 5 ? 5 : 10;
             let step = niceStep * exp10;
-            let lim = Math.max(step, Math.ceil(maxAbs / step) * step);
-            let axisFmt = (val) => (window.currentLang === 'en'
-                ? (typeof val === 'number' ? val.toLocaleString('en-US') : val) : val);
+            let lim = tidyFloat(Math.max(step, Math.ceil(maxAbs / step) * step));
+            let axisFmt = axisValueText;
             let opt = {
                 tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, confine: true },
                 legend: { top: 4, left: 48, right: 32, type: 'scroll', itemGap: 10, itemWidth: 12, itemHeight: 14, textStyle: { fontSize: 11, fontFamily: ANALYSIS_FONT } },
@@ -9174,9 +9188,8 @@
             let frac = stepRaw / exp10;
             let niceStep = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 2.5 ? 2.5 : frac <= 5 ? 5 : 10;
             let step = niceStep * exp10;
-            let lim = Math.max(step, Math.ceil(maxAbs / step) * step);
-            let axisFmt = (val) => (window.currentLang === 'en'
-                ? (typeof val === 'number' ? val.toLocaleString('en-US') : val) : val);
+            let lim = tidyFloat(Math.max(step, Math.ceil(maxAbs / step) * step));
+            let axisFmt = axisValueText;
             let cw = (chart && typeof chart.getWidth === 'function') ? chart.getWidth() : 0;
             let ch = (chart && typeof chart.getHeight === 'function') ? chart.getHeight() : 0;
             let compact = (ch > 0 && ch < 320) || (cw > 0 && cw < 460);
@@ -9548,7 +9561,9 @@
                 style: { text: text, fontSize: 13, fill: '#9CA3AF', textAlign: 'center', lineHeight: 20, width: 420, fontFamily: FLOW_FONT } }]
         });
     }
-    function renderFlowMatrix(chart, config, rows, isEn, unitName) {
+    function renderFlowMatrix(chart, config, rows, isEn, ladder) {
+        let lf = (ladder && ladder.factor) || 1;
+        let unitName = (ladder && ladder.unit) || '';
         let f1 = config.xField, f2 = config.subField || config.flowStage3 || '', vf = config.yField;
         if (!f1 || !f2 || !vf) {
             flowEmptyNotice(chart, config, isEn ? 'Pick a source field and a destination field for the flow matrix.' : '请在编辑器里选择「来源字段」与「目的地字段」。');
@@ -9585,6 +9600,8 @@
         }
         // 空值 / 0 值单元格不渲染；整行整列都没有有效值时，该类别也不占坐标轴。
         let cells = Object.keys(map).map(k => map[k]).filter(o => isFinite(o.v) && o.v !== 0);
+        // bak202：单位升档 —— 数值折算到目标单位（与主链路同口径）。
+        if (lf > 1) cells.forEach(o => { o.v = o.v / lf; });
         if (!cells.length) { flowEmptyNotice(chart, config, isEn ? 'No non-zero flow records found.' : '没有非零的流向记录。'); return; }
         let usedA = {}, usedB = {};
         cells.forEach(o => { usedA[o.a] = 1; usedB[o.b] = 1; });
@@ -9625,7 +9642,9 @@
             graphic: flowUnitGraphic(unitName, isEn)
         });
     }
-    function renderFlowSankey(chart, config, rows, isEn, unitName) {
+    function renderFlowSankey(chart, config, rows, isEn, ladder) {
+        let lf = (ladder && ladder.factor) || 1;
+        let unitName = (ladder && ladder.unit) || '';
         let stages = [config.xField, config.subField, config.flowStage3, config.flowStage4].filter(v => v && String(v).trim());
         let vf = config.yField;
         if (stages.length < 2 || !vf) {
@@ -9684,6 +9703,8 @@
                 }
             });
         }
+        // bak202：单位升档 —— pairs 数值折算到目标单位（links / nodes 均由此派生）。
+        if (lf > 1) Object.keys(pairs).forEach(k => { pairs[k].v = pairs[k].v / lf; });
         let links = Object.keys(pairs).map(k => {
             let o = pairs[k];
             return { source: o.source, target: o.target, value: o.v,
@@ -9741,7 +9762,9 @@
             graphic: graphic
         });
     }
-    function renderBubbleCompare(chart, config, rows, isEn, unitName) {
+    function renderBubbleCompare(chart, config, rows, isEn, ladder) {
+        let lf = (ladder && ladder.factor) || 1;
+        let unitName = (ladder && ladder.unit) || '';
         let xf = config.xField, vf = config.yField, sf = config.bubbleSizeField || vf;
         if (!xf || !vf) { flowEmptyNotice(chart, config, isEn ? 'Pick a region field and a measure.' : '请选择区域字段与度量字段。'); return; }
         let calcDef = flowCalcDef(vf);
@@ -9780,6 +9803,8 @@
             });
         }
         if (!cats.length) { flowEmptyNotice(chart, config, isEn ? 'No region data found.' : '没有可用的区域数据。'); return; }
+        // bak202：单位升档 —— Y 轴数值折算到目标单位（气泡大小用 sizeAgg 的相对极差，不受影响）。
+        if (lf > 1) cats.forEach(k => { if (typeof agg[k] === 'number') agg[k] = agg[k] / lf; });
         let sizeVals = cats.map(k => Math.abs(sizeAgg[k] || 0));
         let maxSize = Math.max.apply(null, sizeVals.concat([1]));
         let minSize = Math.min.apply(null, sizeVals);
@@ -9796,7 +9821,18 @@
                 tooltip: { formatter: '{b}' } };
         });
         let xRot = cats.some(k => flowDisp(k, isEn).length > 4) ? 30 : 0;
-        flowFinish(chart, config, {
+        // bak203：气泡标签避让（用户截图「名字有重叠」）。
+        //  ECharts 的 labelLayout.moveOverlap / hideOverlap 对 scatter 的类目轴标签无效
+        //  （实测：moveOverlap 不生效、hideOverlap 会隐藏标签），故自研「就近微调」：
+        //  ① 先按常规渲染（标签在气泡正上方），从 canvas 显示列表量出每个标签的真实矩形，
+        //     并用 convertToPixel 取得每个气泡的像素中心与半径；
+        //  ② 只对互相重叠（或超出绘图区左右边界、压到 Y 轴刻度）的标签做微调，
+        //     按「上方 → 下方 → 左侧 → 右侧 → 上移 → 下移」的优先级，在气泡附近找最近的空位；
+        //  ③ 所有候选位置都放不下的，才隐藏该标签（少量不显示名字）。
+        //  标签始终紧贴自己的气泡，不需要长引导线；不重叠的标签完全不动，观感与原来一致。
+        const BUB_GAP = 5;         // 标签与气泡的间距（ECharts label distance 默认值）
+        const BUB_STEP = 13;       // 每次微调的像素步长
+        const buildOpt = (layout) => ({
             backgroundColor: 'transparent',
             textStyle: { fontFamily: FLOW_FONT, fontSize: 12, color: '#374151' },
             tooltip: { trigger: 'item', confine: true },
@@ -9810,11 +9846,142 @@
                 nameTextStyle: { fontSize: 11, color: '#6B7280', align: 'left', fontFamily: FLOW_FONT },
                 axisLabel: { fontSize: 12, color: '#374151', fontFamily: FLOW_FONT },
                 splitLine: { lineStyle: { color: '#EEF0F3' } } },
-            series: [{ type: 'scatter', name: flowDisp(vf, isEn), data: data, label: { show: false },
+            series: [{ type: 'scatter', name: flowDisp(vf, isEn),
+                data: data.map((d, i) => {
+                    let L = layout && layout[i];
+                    if (!L) return d;
+                    if (L.hide) return Object.assign({}, d, { label: Object.assign({}, d.label, { show: false }) });
+                    if (L.off && (L.off[0] || L.off[1])) {
+                        return Object.assign({}, d, { label: Object.assign({}, d.label, { offset: L.off }) });
+                    }
+                    return d;
+                }),
+                label: { show: false },
                 tooltip: { formatter: '{b}' }, emphasis: { scale: 1.08 } }],
             graphic: []
         });
+        flowFinish(chart, config, buildOpt(null));
+
+        try {
+            let zr = (chart && typeof chart.getZr === 'function') ? chart.getZr() : null;
+            let list = zr ? zr.storage.getDisplayList(true) : [];
+            let cw = (chart.getWidth ? chart.getWidth() : 700);
+            let chh = (chart.getHeight ? chart.getHeight() : 420);
+            let plotL = 64, plotR = cw - 40, plotT = 8, plotB = chh - 8;
+            // ① 量出标签真实矩形（getBoundingRect 是相对父元素的局部坐标，须叠加 transform 平移量）
+            let rects = {};
+            list.forEach(e => {
+                if (!e || e.type !== 'tspan' || !e.style) return;
+                let t = e.style.text;
+                if (typeof t !== 'string' || !t.trim()) return;
+                let idx = cats.findIndex(k => flowDisp(k, isEn) === t);
+                if (idx < 0) return;
+                let rc = e.getBoundingRect();
+                let tr = e.transform || [];
+                rects[idx] = { x: rc.x + (tr[4] || 0), y: rc.y + (tr[5] || 0), w: rc.width, h: rc.height };
+            });
+            if (!Object.keys(rects).length) return;
+            // ② 气泡像素中心与半径
+            let bubbles = {};
+            cats.forEach((k, i) => {
+                try {
+                    let px = chart.convertToPixel({ seriesIndex: 0 }, [i, agg[k]]);
+                    if (!px || px[0] === null || px[1] === null) return;
+                    bubbles[i] = { x: px[0], y: px[1], r: (sizeOf(k) / 2) };
+                } catch (e) {}
+            });
+            function sizeOf(k) {
+                let i = cats.indexOf(k);
+                let d = data[i] || {};
+                return typeof d.symbolSize === 'number' ? d.symbolSize : 20;
+            }
+            // ③ 冲突判定：互相重叠，或超出绘图区左右边界（会压到 Y 轴刻度）
+            let idxs = Object.keys(rects).map(Number);
+            let conflict = new Set();
+            idxs.forEach(a => {
+                let r = rects[a];
+                if (r.x < plotL || (r.x + r.w) > plotR) conflict.add(a);
+            });
+            for (let i2 = 0; i2 < idxs.length; i2++) for (let j2 = i2 + 1; j2 < idxs.length; j2++) {
+                let a = rects[idxs[i2]], b = rects[idxs[j2]];
+                let ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+                let oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+                if (ox > 1 && oy > 1) { conflict.add(idxs[i2]); conflict.add(idxs[j2]); }
+            }
+            // ③-2 Y 轴单位名（nameLocation:'end'）在绘图区左上角，其位置是 ECharts 的 axis name
+            //      （不是 tspan，读不到精确矩形）。这里不单独定位它，改为在选候选位置时
+            //      一律不许把标签挪到绘图区上方（网格线以上是轴名/单位名的地盘）。
+            if (!conflict.size) return;
+            // ④ 为冲突标签在气泡附近找空位（就近微调，不做长距离引导线）
+            //    已占位：不动冲突的标签（它们都会重新定位），不动其它标签（保持原位）
+            let occupied = [];
+            idxs.forEach(i3 => { if (!conflict.has(i3)) occupied.push(rects[i3]); });
+            let layout = {};
+            // 按气泡 x 从左到右处理，避免右侧标签先占位把左边挤开
+            let order = [...conflict].sort((m, n) => (bubbles[m] ? bubbles[m].x : 0) - (bubbles[n] ? bubbles[n].x : 0));
+            order.forEach(ci => {
+                let r = rects[ci], b = bubbles[ci];
+                if (!r || !b) { layout[ci] = { hide: true }; return; }
+                // 候选位置：相对原矩形（top 锚点）的偏移
+                //   上移 / 下移：沿 y 轴平移；左右：切到气泡侧面
+                let cands = [];
+                // 只用「top 锚点 + 像素平移」：ECharts 的 label.offset 是纯平移，
+                // 行为确定、推算准确（换 position 会改变锚点，实测推算会偏、导致新重叠）。
+                // 就近优先：先左右小幅挪，再上下挪，最后才大范围挪。
+                cands.push({ off: [0, 0] });
+                for (let s = 1; s <= 3; s++) { cands.push({ off: [-s * BUB_STEP, 0] }); cands.push({ off: [s * BUB_STEP, 0] }); }
+                for (let s = 1; s <= 3; s++) cands.push({ off: [0, s * BUB_STEP] });             // 下移
+                for (let s = 1; s <= 6; s++) cands.push({ off: [0, -s * BUB_STEP] });            // 上移
+                // 斜向组合（如右上 / 左下）常能塞进密集区
+                for (let s = 1; s <= 4; s++) {
+                    cands.push({ off: [-s * BUB_STEP, -s * BUB_STEP] });
+                    cands.push({ off: [s * BUB_STEP, -s * BUB_STEP] });
+                    cands.push({ off: [-s * BUB_STEP, s * BUB_STEP] });
+                    cands.push({ off: [s * BUB_STEP, s * BUB_STEP] });
+                }
+                for (let s = 4; s <= 8; s++) { cands.push({ off: [-s * BUB_STEP, 0] }); cands.push({ off: [s * BUB_STEP, 0] }); }
+                for (let s = 7; s <= 10; s++) cands.push({ off: [0, -s * BUB_STEP] });
+                // 由候选推算矩形：top 锚点 + 纯平移（offset 是像素平移，行为确定）
+                function boxOf(c) {
+                    return { x: r.x + c.off[0], y: r.y + c.off[1], w: r.w, h: r.h };
+                }
+                let picked = null, pickBox = null;
+                // 较大气泡的信息量高，标签压上去会挡住 → 避开；
+                // 小气泡彼此紧挨，允许被轻微压到（标签带白描边，仍可读）。
+                let otherBubbles = [];
+                Object.keys(bubbles).forEach(bi => {
+                    let nb = bubbles[bi];
+                    if (bi === ci || nb.r < 16) return;
+                    otherBubbles.push({ x: nb.x - nb.r, y: nb.y - nb.r, w: nb.r * 2, h: nb.r * 2 });
+                });
+                for (const c of cands) {
+                    let bx = boxOf(c);
+                    if (bx.x < plotL - 2 || (bx.x + bx.w) > plotR + 2) continue;
+                    // 不许挪到绘图区上方（轴名 / 单位名所在）
+                    if (bx.y < plotT || (bx.y + bx.h) > plotB) continue;
+                    let hit = occupied.some(o => {
+                        let ox = Math.min(bx.x + bx.w, o.x + o.w) - Math.max(bx.x, o.x);
+                        let oy = Math.min(bx.y + bx.h, o.y + o.h) - Math.max(bx.y, o.y);
+                        return ox > 1 && oy > 1;
+                    });
+                    if (!hit) {
+                        // 压到别的气泡上 → 视为冲突（自己的气泡不算）
+                        hit = otherBubbles.some(o => {
+                            let ox = Math.min(bx.x + bx.w, o.x + o.w) - Math.max(bx.x, o.x);
+                            let oy = Math.min(bx.y + bx.h, o.y + o.h) - Math.max(bx.y, o.y);
+                            return ox > 2 && oy > 2;
+                        });
+                    }
+                    if (!hit) { picked = c; pickBox = bx; break; }
+                }
+                if (!picked) { layout[ci] = { hide: true }; return; }
+                occupied.push(pickBox);
+                layout[ci] = picked;
+            });
+            flowFinish(chart, config, buildOpt(layout));
+        } catch (e) { /* 避让失败不影响主图 */ }
     }
+
     // TopN 截取：主链路的 TopN 在 isFlowChartType 短路之后，三类流向图原本完全走不到。
     // 这里按 X 阶段（来源字段 / 区域字段 / 阶段 1）的度量合计降序取前 N 个类目，再过滤事实行；
     // 其余阶段的节点从剩余行重新收集，不会留下孤立节点，口径与柱/折线图一致。
@@ -9854,9 +10021,34 @@
         let rows = flowApplyTopN((ctx.chartData || ctx.scopedData || []).filter(r => r && !isTotalRow(r)), config);
         let unitName = '';
         try { unitName = extractPureUnit(config.yField, isEn) || ''; } catch (e) {}
-        if (config.type === 'flow-matrix') renderFlowMatrix(chart, config, rows, isEn, unitName);
-        else if (config.type === 'flow-sankey') renderFlowSankey(chart, config, rows, isEn, unitName);
-        else if (config.type === 'bubble') renderBubbleCompare(chart, config, rows, isEn, unitName);
+        // bak202：流向类图表（流向矩阵 / 多阶段桑基 / 气泡对比）此前完全不做单位升档，
+        // Y 轴与单位标注一直停在「万吨」原单位（用户截图：气泡图 Y 轴刻度到 120,000）。
+        // 这里按当前图数据的实际量级决定升档级别，数值统一折算、单位名换成目标单位，
+        // 与主链路（updateEChartsInstance → unitLadderForValues / scaleOptionSeriesByLadder）同口径。
+        let flowLadder = { factor: 1, unit: unitName };
+        try {
+            let probe = [];
+            let vf = config.yField;
+            let calcDef = flowCalcDef(vf);
+            if (calcDef) {
+                let buckets = flowBucketRows(rows, r => getXValue(r, config.xField) || '');
+                Object.keys(buckets).forEach(k => {
+                    let list = buckets[k].rows;
+                    let v = flowGroupValue(calcDef, list, list[0], vf, isEn);
+                    if (typeof v === 'number' && isFinite(v)) probe.push(Math.abs(v));
+                });
+            } else {
+                rows.forEach(r => {
+                    let v = flowRowVal(r, vf, isEn);
+                    if (typeof v === 'number' && isFinite(v)) probe.push(Math.abs(v));
+                });
+            }
+            let L = unitLadderForValues(probe, unitName);
+            if (L && L.factor > 1) flowLadder = { factor: L.factor, unit: L.unit || unitName };
+        } catch (e) {}
+        if (config.type === 'flow-matrix') renderFlowMatrix(chart, config, rows, isEn, flowLadder);
+        else if (config.type === 'flow-sankey') renderFlowSankey(chart, config, rows, isEn, flowLadder);
+        else if (config.type === 'bubble') renderBubbleCompare(chart, config, rows, isEn, flowLadder);
     }
 
     function updateEChartsInstance(chart, config) {
@@ -10387,12 +10579,19 @@
         //   - 饼图 / 环形图（无图例）：26 = 单位名 20 + 喘息 6
         let isLegendHiddenChart = (config.type === 'pie' || config.type === 'ring-pie');
         let gridTopReserve = isLegendHiddenChart ? 26 : (isHorizontalChart ? 32 : 56);
+        // bak202：饼/环/树图无数值轴，单位只能靠 tooltip 文本带出；升档后按新单位显示。
+        // 中文不加千位分隔符（口径：中文数字一律 String/toFixed，不做千分位）。
+        let tooltipUnitSuffix = (config.type === 'pie' || config.type === 'ring-pie' || config.type === 'treemap')
+            ? (unitY1AxisName ? ' ' + unitY1AxisName : '') : '';
         let option = {
             tooltip: {
                 trigger: config.type === 'pie' || config.type === 'treemap' ? 'item' : 'axis',
                 // 约束在图表容器内：hover 最左侧/最右侧的数据点时 tooltip 不再被容器边缘截断
                 confine: true,
-                valueFormatter: (val, params) => formatChartNumber(adaptAxisValueToUnit(val, (params && params.seriesName && params.seriesName === y2SeriesRef.name) ? unitY2 : unitY1, isEn), config.yField)
+                valueFormatter: (val, params) => {
+                    let s = formatChartNumber(adaptAxisValueToUnit(val, (params && params.seriesName && params.seriesName === y2SeriesRef.name) ? unitY2 : unitY1, isEn), config.yField);
+                    return tooltipUnitSuffix ? s + tooltipUnitSuffix : s;
+                }
             },
             // 图例紧贴顶部（top=4），与 grid 顶部仅留 ~6px 喘息；itemGap 10 让多系列图例更紧凑。
             legend: isLegendHiddenChart
@@ -10486,9 +10685,10 @@
                 animationDurationUpdate: 0,
                 animationDuration: 0,
                 breadcrumb: { show: false },
-                label: { show: true, formatter: (p) => `${p.name}\n${formatChartNumber(p.value, config.yField)}` },
+                // bak202：数值已折算到升档单位；标签与 tooltip 补上单位字样（树图无数值轴）。
+                label: { show: true, formatter: (p) => `${p.name}\n${formatChartNumber(p.value, config.yField)}${tooltipUnitSuffix}` },
                 itemStyle: { borderColor: '#fff', borderWidth: 1, gapWidth: 1 },
-                tooltip: { valueFormatter: (v) => formatChartNumber(v, config.yField) }
+                tooltip: { valueFormatter: (v) => formatChartNumber(v, config.yField) + tooltipUnitSuffix }
             }];
         } else if(isSub) {
             let subTotals = {};
@@ -11119,10 +11319,11 @@
         // 不产生多余图例项；放在 option 缓存之前 → 放大/横屏/下载/复制/嵌入页全部继承。
         try { applyProjectionStyle(option, config, chartData, xDataKeys); } catch (e) { console.warn('预测值表达失败', e); }
 
-        // bak183：系列数值统一折算到升档单位；饼/环/矩形树图无数值轴，保持原样。
-        if (config.type !== 'pie' && config.type !== 'ring-pie' && config.type !== 'treemap') {
-            try { scaleOptionSeriesByLadder(option, ladderY1.factor, ladderY2.factor); } catch (e) {}
-        }
+        // bak183：系列数值统一折算到升档单位。
+        // bak202：饼/环/矩形树图虽无数值轴，但 tooltip / 树图标签会显示数值，
+        // 原值（十万级万吨）与同看板其它图的「亿吨」口径不一致，故一并参与折算；
+        // 占比与面积只取决于数值之间的相对比例，折算后不变。
+        try { scaleOptionSeriesByLadder(option, ladderY1.factor, ladderY2.factor); } catch (e) {}
         // 缓存最近一次渲染的 option，作为 generateChartEmbedCode 的兜底
         // （让复制嵌入代码不依赖 ECharts 实例仍在内存中）
         try { lastRenderedChartOption[config.id] = option; lastRenderedChartId = config.id; } catch (e) {}
