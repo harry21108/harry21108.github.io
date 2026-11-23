@@ -3148,6 +3148,110 @@
         return val;
     }
 
+    // bak218：主 Y 轴刻度统一保留 1 位小数。中文不加千分位；英文保留千分位且固定 1 位小数。
+    // 只用于主轴 formatter，不改次轴、tooltip、KPI 的原始数值口径。
+    function formatY1AxisTickPlain(val, isEn) {
+        if (typeof val !== 'number' || !isFinite(val)) return val;
+        return isEn
+            ? val.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+            : val.toFixed(1);
+    }
+    function formatY1AxisTick(val, unit, isEn) {
+        if (typeof val !== 'number' || !isFinite(val)) return val;
+        return formatY1AxisTickPlain(adaptAxisValueToUnit(val, unit, isEn), isEn);
+    }
+    // 次轴：整数刻度不加小数位；非整数保留 1 位。英文保留千分位。
+    function formatY2AxisTick(val, unit, isEn) {
+        if (typeof val !== 'number' || !isFinite(val)) return val;
+        let n = (typeof unit === 'string' && unit) ? adaptAxisValueToUnit(val, unit, isEn) : val;
+        let isInt = Math.abs(n - Math.round(n)) < 1e-9;
+        return isEn
+            ? n.toLocaleString('en-US', { minimumFractionDigits: isInt ? 0 : 1, maximumFractionDigits: isInt ? 0 : 1 })
+            : (isInt ? String(Math.round(n)) : n.toFixed(1));
+    }
+
+    // bak219：主/次 Y 轴统一小数位——按整条轴判断：全部刻度为整数则 0 位，
+    // 只要有一个刻度带小数则整轴统一 1 位。只在 option 收尾阶段包一层 formatter，
+    // 不改变原数值、单位换算、千分位与 % 等后缀。
+    function axisTickIsInteger(v) {
+        return typeof v === 'number' && isFinite(v) && Math.abs(v - Math.round(v)) < 1e-9;
+    }
+    function axisNiceStep(span, splitNumber) {
+        if (!(span > 0) || !isFinite(span)) return 1;
+        let raw = span / (splitNumber > 0 ? splitNumber : 5);
+        let exp = Math.pow(10, Math.floor(Math.log10(raw)));
+        let f = raw / exp;
+        let m = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+        return m * exp;
+    }
+    function axisTickDigits(option, axis, yi) {
+        if (!axis || (axis.type && axis.type !== 'value' && axis.type !== 'log')) return 0;
+        let mn = axis.min, mx = axis.max, iv = axis.interval;
+        let hasMn = typeof mn === 'number' && isFinite(mn);
+        let hasMx = typeof mx === 'number' && isFinite(mx);
+        if (hasMn && hasMx && typeof iv === 'number' && isFinite(iv) && iv > 0) {
+            let n = Math.floor((mx - mn) / iv + 1e-9) + 1;
+            if (n > 0 && n <= 2000) {
+                for (let i = 0; i < n; i++) {
+                    if (!axisTickIsInteger(Number((mn + i * iv).toPrecision(12)))) return 1;
+                }
+                return 0;
+            }
+        }
+        let vals = [];
+        collectYAxisSeriesValues(option, yi).forEach(d => {
+            let n = (d && typeof d === 'object') ? d.value : d;
+            n = Number(n);
+            if (isFinite(n)) vals.push(n);
+        });
+        let dmin = vals.length ? Math.min.apply(null, vals) : null;
+        let dmax = vals.length ? Math.max.apply(null, vals) : null;
+        if (!hasMn && dmin === null) return 0;
+        let lo = hasMn ? mn : dmin;
+        let hi = hasMx ? mx : dmax;
+        if (hi === null) hi = lo;
+        let span = hi - lo;
+        let step = (typeof iv === 'number' && isFinite(iv) && iv > 0) ? iv : axisNiceStep(span, axis.splitNumber);
+        if (!hasMn) lo = Math.floor((lo - 1e-9) / step) * step;
+        if (!hasMx) hi = Math.ceil((hi + 1e-9) / step) * step;
+        return (!axisTickIsInteger(lo) || !axisTickIsInteger(hi) || !axisTickIsInteger(step)) ? 1 : 0;
+    }
+    function formatAxisLabelDigits(formatter, digits, isEn) {
+        let baseFormatter = typeof formatter === 'function' ? formatter : null;
+        let wrapped = function (val, idx) {
+            let out = baseFormatter
+                ? baseFormatter.call(this, val, idx)
+                : ((typeof val === 'number' && isFinite(val)) ? (isEn ? val.toLocaleString('en-US') : String(val)) : val);
+            if (typeof out !== 'string' && typeof out !== 'number') return out;
+            let s = String(out);
+            let m = s.match(/^\s*(-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)/);
+            if (!m) return s;
+            let n = Number(m[1].replace(/,/g, ''));
+            if (!isFinite(n)) return s;
+            let text = m[1].indexOf(',') >= 0
+                ? n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+                : n.toFixed(digits);
+            return text + s.slice(m[1].length);
+        };
+        wrapped.__uniformBaseFormatter = baseFormatter;
+        return wrapped;
+    }
+    function applyUniformYAxisPrecision(option, isEn) {
+        if (!option) return option;
+        let axes = Array.isArray(option.yAxis) ? option.yAxis : (option.yAxis ? [option.yAxis] : []);
+        axes.forEach((ya, yi) => {
+            if (!ya || typeof ya !== 'object') return;
+            let digits = axisTickDigits(option, ya, yi);
+            ya.axisLabel = ya.axisLabel || {};
+            ya.axisLabel.__uniformDigits = digits;
+            let prev = ya.axisLabel.formatter;
+            let base = (prev && Object.prototype.hasOwnProperty.call(prev, '__uniformBaseFormatter'))
+                ? prev.__uniformBaseFormatter : prev;
+            ya.axisLabel.formatter = formatAxisLabelDigits(base, digits, isEn);
+        });
+        return option;
+    }
+
     /** 第四十四轮：提取字段名的"原始单位"（括号内优先，其次关键字回退），作为全局设置里单位映射表的键 */
     function getFieldRawUnit(fieldName) {
         if (!fieldName) return '';
@@ -8840,6 +8944,79 @@
         if (!xa || Array.isArray(xa) || xa.type !== 'category' || !Array.isArray(xa.data) || xa.data.length < 2) return;
         xa.boundaryGap = false;
     }
+    // bak212：把一个过长的类目标签拆成两行（用 '\n' 烘进 data，而非 formatter 函数 ——
+    // 后者在嵌入页 plainJson 序列化时会被剥掉）。切点优先级：逗号 > 空格 > 中文/无分隔中点；
+    // 选「拆后两行最大宽度最小」的切点，且任一行仍超带宽则放弃（宁可保持一行不硬拆）。
+    function wrapLongCategoryLabel(text, fontSize, limit) {
+        let s = String(text);
+        if (!s || measureTextPx(s, fontSize) <= limit || s.indexOf('\n') >= 0) return null;
+        let cuts = [];
+        for (let i = 0; i < s.length; i++) if (/[,，]/.test(s[i])) cuts.push(i + 1); // 逗号保留在第一行
+        for (let i = 1; i < s.length; i++) if (/\s/.test(s[i]) && !/\s/.test(s[i - 1])) cuts.push(i);
+        cuts.push(Math.ceil(s.length / 2));
+        let best = null;
+        cuts.forEach(cut => {
+            if (cut <= 0 || cut >= s.length) return;
+            let a = s.slice(0, cut).trim(), b = s.slice(cut).trim();
+            if (!a || !b) return;
+            let score = Math.max(measureTextPx(a, fontSize), measureTextPx(b, fontSize));
+            if (score > limit) return;
+            if (!best || score < best.score) best = { a: a, b: b, score: score };
+        });
+        return best ? best.a + '\n' + best.b : null;
+    }
+    // bak210：纵向 category 轴类别较少时，ECharts 默认 interval:'auto' 会按标签宽度抽样、
+    // 丢掉中间类别名（如 4 根柱只显示 3 个名字）。类别少时强制 interval:0 全显示，并按
+    // 字号加高 grid.bottom 让长标签不被裁；类别多时保持原样（交回 auto/hideOverlap 防压字）。
+    // 阈值按实测：≤6 类在 520px 宽下 interval:0 零重叠；宽画布(≥700)放宽到 ≤8 类。
+    // bak212：额外对「实测宽度 > 单类带宽 0.92」的超长标签拆成两行，消除少数长名互相重叠；
+    // 短标签原样返回，宽画布下带宽变大自然不拆。拆行后按需加高 bottom 容纳第二行。
+    function fitFewCategoryXLabels(option, chart, fontSize) {
+        if (!option) return false;
+        let xas = Array.isArray(option.xAxis) ? option.xAxis : [option.xAxis];
+        let target = null, catCount = 0;
+        (xas || []).forEach(xa => {
+            if (xa && xa.type === 'category' && Array.isArray(xa.data) && xa.data.length > catCount) {
+                target = xa; catCount = xa.data.length;
+            }
+        });
+        if (!target) return false;
+        let w = (chart && typeof chart.getWidth === 'function') ? chart.getWidth() : 0;
+        let maxCats = (w && w >= 700) ? 8 : 6;
+        if (catCount > maxCats) return false;
+        let fs = fontSize || 12;
+        target.axisLabel = Object.assign({}, target.axisLabel || {}, { interval: 0 });
+        // bak212：只对超长标签拆行。用画布可用宽度算单类带宽；chart 缺失（嵌入页）时
+        // 若 data 已带 '\n'（从主图 option 继承）则直接沿用，不重复拆。
+        let hasWrapped = false;
+        try {
+            let grids = Array.isArray(option.grid) ? option.grid : (option.grid ? [option.grid] : []);
+            let g0 = grids[0] || {};
+            let left = typeof g0.left === 'number' ? g0.left : 48;
+            let right = typeof g0.right === 'number' ? g0.right : 32;
+            if (w > 0) {
+                let band = Math.max(40, (w - left - right) / catCount);
+                let limit = band * 0.92;
+                target.data = target.data.map(raw => {
+                    if (raw === null || raw === undefined) return raw;
+                    let s = String(raw);
+                    if (s.indexOf('\n') >= 0) return raw; // 已拆过，幂等
+                    let wrapped = wrapLongCategoryLabel(s, fs, limit);
+                    if (wrapped) return wrapped;
+                    return raw;
+                });
+            }
+            hasWrapped = target.data.some(raw => raw !== null && raw !== undefined && String(raw).indexOf('\n') >= 0);
+        } catch (e) {}
+        let needBottom = Math.max(32, Math.round(fs * 2.6));
+        if (hasWrapped) needBottom = Math.max(needBottom, Math.round(fs * 3.4) + 4);
+        let hasDZ = Array.isArray(option.dataZoom) && option.dataZoom.some(z => z && z.type === 'slider' && z.show !== false);
+        if (!hasDZ) {
+            let grids = Array.isArray(option.grid) ? option.grid : (option.grid ? [option.grid] : []);
+            grids.forEach(g => { if (g && typeof g.bottom === 'number' && g.bottom < needBottom) g.bottom = needBottom; });
+        }
+        return true;
+    }
     // bak144：分析图表「增减方向」术语 —— 不再写死「增产/减产」。
     // 旧实现中文恒为「增产/减产」，对销量、库存、价格等数据会说错话（英文 Increase/Decrease 本就中性）。
     // 现按 Y 字段名保守自适应，并可在「全局设置 → 变化方向术语」按字段覆盖；中英各一套，同一套 preset 键。
@@ -8959,6 +9136,8 @@
     function finalizeAnalysisOption(option, isEn) {
         // bak141：过滤空值系列行（增减双向堆叠里该类别没有的那一侧不显示空行）
         try { if (option.tooltip && !option.tooltip.formatter) option.tooltip.formatter = analysisTooltipFormatter; } catch (e) { /* ignore */ }
+        // bak219：整轴统一小数位需在单位名估宽之前完成，避免估宽仍按旧的 1 位小数文本
+        try { applyUniformYAxisPrecision(option, isEn); } catch (e) { /* ignore */ }
         try { applyYAxisUnitNameLayout(option, isEn, false); } catch (e) { /* ignore */ }
         // bak138：右轴单位名（累计占比%）原为右对齐到轴线右侧 → 伸出画布被裁（用户截图 1 右上角）。
         // 改为右对齐到轴线**左侧**（落在绘图区顶部的空白带里），保证完整可见。
@@ -9093,7 +9272,7 @@
         function axisValueText(val) {
             if (typeof val !== 'number') return val;
             let t = tidyFloat(val);
-            return window.currentLang === 'en' ? t.toLocaleString('en-US') : String(t);
+            return formatY1AxisTickPlain(t, window.currentLang === 'en');
         }
 
         function baseOption(labels, yName, hasY2, y2Name) {
@@ -9102,9 +9281,7 @@
             // 分析图表用两次会让总量（>1000）被再除 100（瀑布图轴出现 1,000/500 与 20/15 混排）。
             let axisLabelConfig = {
                 color: '#6E7079',
-                formatter: (val) => (window.currentLang === 'en'
-                    ? (typeof val === 'number' ? val.toLocaleString('en-US') : val)
-                    : val)
+                formatter: (val) => formatY1AxisTickPlain(val, window.currentLang === 'en')
             };
             // 类别标签：不再强制 interval:0 —— 标签一多就会互相压字（瀑布图"Statbner Mongoll…"）。
             // 改为 ECharts 自动隐藏重叠项 + 首尾强制保留（bak129 口径），项数多时旋转 30°。
@@ -9118,7 +9295,7 @@
             let fs = compact ? 10 : 12;
             let yAxis = hasY2
                 ? [{ type: 'value', name: yName, nameTextStyle: { fontSize: 11, color: '#6B7280' }, axisLabel: Object.assign({}, axisLabelConfig, { fontSize: fs }), splitLine: { lineStyle: { color: '#EEF0F2' } } },
-                   { type: 'value', name: y2Name, max: 100, min: 0, nameTextStyle: { fontSize: 11, color: '#6B7280' }, axisLabel: { color: '#6E7079', fontSize: fs, formatter: (v) => v + '%' }, splitLine: { show: false } }]
+                   { type: 'value', name: y2Name, max: 100, min: 0, nameTextStyle: { fontSize: 11, color: '#6B7280' }, axisLabel: { color: '#6E7079', fontSize: fs, formatter: (v) => formatY2AxisTick(v, null, window.currentLang === 'en') + '%' }, splitLine: { show: false } }]
                 : [{ type: 'value', name: yName, nameTextStyle: { fontSize: 11, color: '#6B7280' }, axisLabel: Object.assign({}, axisLabelConfig, { fontSize: fs }), splitLine: { lineStyle: { color: '#EEF0F2' } } }];
             return {
                 tooltip: { trigger: 'axis', confine: true, valueFormatter: (val) => (val === null || val === undefined || isNaN(val)) ? '' : formatChartNumber(val) },
@@ -9714,6 +9891,7 @@
     }
     function flowFinish(chart, config, opt) {
         opt.legend = Object.assign({}, opt.legend || {}, { show: false });
+        try { applyUniformYAxisPrecision(opt, window.currentLang === 'en'); } catch (e) {}
         try { lastRenderedChartOption[config.id] = opt; lastRenderedChartId = config.id; } catch (e) {}
         chart.setOption(opt, true);
     }
@@ -9995,8 +10173,12 @@
         //  标签始终紧贴自己的气泡，不需要长引导线；不重叠的标签完全不动，观感与原来一致。
         const BUB_GAP = 5;         // 标签与气泡的间距（ECharts label distance 默认值）
         const BUB_STEP = 13;       // 每次微调的像素步长
-        const buildOpt = (layout) => ({
+        const buildOpt = (layout, quiet) => ({
             backgroundColor: 'transparent',
+            // bak211：首次「测量渲染」关掉动画，避免量到动画中间态的标签矩形
+            // （实测会比最终位置低一个气泡半径，叠加 offset 后标签离气泡很远）；
+            // 最终渲染仍保持默认动画，观感不变。
+            animation: quiet ? false : true,
             textStyle: { fontFamily: FLOW_FONT, fontSize: 12, color: '#374151' },
             tooltip: { trigger: 'item', confine: true },
             legend: { show: false },
@@ -10023,7 +10205,7 @@
                 tooltip: { formatter: '{b}' }, emphasis: { scale: 1.08 } }],
             graphic: []
         });
-        flowFinish(chart, config, buildOpt(null));
+        flowFinish(chart, config, buildOpt(null, true));
 
         try {
             let zr = (chart && typeof chart.getZr === 'function') ? chart.getZr() : null;
@@ -10086,35 +10268,37 @@
                 let r = rects[ci], b = bubbles[ci];
                 if (!r || !b) { layout[ci] = { hide: true }; return; }
                 // 候选位置：相对原矩形（top 锚点）的偏移
-                //   上移 / 下移：沿 y 轴平移；左右：切到气泡侧面
-                let cands = [];
                 // 只用「top 锚点 + 像素平移」：ECharts 的 label.offset 是纯平移，
                 // 行为确定、推算准确（换 position 会改变锚点，实测推算会偏、导致新重叠）。
-                // 就近优先：先左右小幅挪，再上下挪，最后才大范围挪。
-                cands.push({ off: [0, 0] });
-                for (let s = 1; s <= 3; s++) { cands.push({ off: [-s * BUB_STEP, 0] }); cands.push({ off: [s * BUB_STEP, 0] }); }
-                for (let s = 1; s <= 3; s++) cands.push({ off: [0, s * BUB_STEP] });             // 下移
-                for (let s = 1; s <= 6; s++) cands.push({ off: [0, -s * BUB_STEP] });            // 上移
-                // 斜向组合（如右上 / 左下）常能塞进密集区
-                for (let s = 1; s <= 4; s++) {
-                    cands.push({ off: [-s * BUB_STEP, -s * BUB_STEP] });
-                    cands.push({ off: [s * BUB_STEP, -s * BUB_STEP] });
-                    cands.push({ off: [-s * BUB_STEP, s * BUB_STEP] });
-                    cands.push({ off: [s * BUB_STEP, s * BUB_STEP] });
+                // bak211：改为「离原位距离从近到远」的环形扩展，取第一个可行位置即最近可行空位。
+                // 每圈 s 含 x/y 步长不等的所有组合（max(|dx|,|dy|)=s），圈内按欧氏距离排序，
+                // 同距离优先上移 → 左右 → 下移；既覆盖「右 13 + 上 26」这类贴边微调，
+                // 也避免旧版手工顺序（左右→下→上→斜向→大范围）把标签推到很远的空位。
+                let cands = [{ off: [0, 0] }];
+                for (let s = 1; s <= 8; s++) {
+                    let ring = [];
+                    for (let a = -s; a <= s; a++) for (let b = -s; b <= s; b++) {
+                        if (Math.max(Math.abs(a), Math.abs(b)) !== s) continue;
+                        ring.push({ a: a, b: b, d: Math.hypot(a, b) });
+                    }
+                    ring.sort((m, n) => (m.d - n.d)
+                        || ((m.b < 0 ? 0 : (m.b === 0 ? 1 : 2)) - (n.b < 0 ? 0 : (n.b === 0 ? 1 : 2)))
+                        || (Math.abs(m.a) - Math.abs(n.a)) || (m.a - n.a));
+                    ring.forEach(c => cands.push({ off: [c.a * BUB_STEP, c.b * BUB_STEP] }));
                 }
-                for (let s = 4; s <= 8; s++) { cands.push({ off: [-s * BUB_STEP, 0] }); cands.push({ off: [s * BUB_STEP, 0] }); }
-                for (let s = 7; s <= 10; s++) cands.push({ off: [0, -s * BUB_STEP] });
                 // 由候选推算矩形：top 锚点 + 纯平移（offset 是像素平移，行为确定）
                 function boxOf(c) {
                     return { x: r.x + c.off[0], y: r.y + c.off[1], w: r.w, h: r.h };
                 }
                 let picked = null, pickBox = null;
                 // 较大气泡的信息量高，标签压上去会挡住 → 避开；
+                // bak211：自己的大气泡（半径≥16px）同样避开 —— 标签压进自己气泡内部同样遮挡难看，
+                // 旧版跳过自身，导致「下移」候选被当成可行位置压在气泡上。
                 // 小气泡彼此紧挨，允许被轻微压到（标签带白描边，仍可读）。
                 let otherBubbles = [];
                 Object.keys(bubbles).forEach(bi => {
                     let nb = bubbles[bi];
-                    if (bi === ci || nb.r < 16) return;
+                    if (nb.r < 16) return;
                     otherBubbles.push({ x: nb.x - nb.r, y: nb.y - nb.r, w: nb.r * 2, h: nb.r * 2 });
                 });
                 for (const c of cands) {
@@ -10128,7 +10312,7 @@
                         return ox > 1 && oy > 1;
                     });
                     if (!hit) {
-                        // 压到别的气泡上 → 视为冲突（自己的气泡不算）
+                        // 压到半径≥16px 的大气泡上 → 视为冲突（含自身）
                         hit = otherBubbles.some(o => {
                             let ox = Math.min(bx.x + bx.w, o.x + o.w) - Math.max(bx.x, o.x);
                             let oy = Math.min(bx.y + bx.h, o.y + o.h) - Math.max(bx.y, o.y);
@@ -10726,10 +10910,10 @@
         if (ladderY1.factor > 1) chartLadderAxisUnit['chart_' + config.id] = ladderY1.unit;
         else { try { delete chartLadderAxisUnit['chart_' + config.id]; } catch (e) {} }
 
-        let axisLabelConfig = { formatter: (val) => window.currentLang === 'en' ? (typeof val === 'number' ? adaptAxisValueToUnit(val, unitY1, isEn).toLocaleString('en-US') : val) : val };
+        let axisLabelConfig = { formatter: (val) => formatY1AxisTick(val, unitY1, window.currentLang === 'en') };
         // 第十四轮：combo 次轴必须用 Y2 自己的单位换算刻度（axisLabelConfig 写死 unitY1，
         // 亿美元→mln $ 后刻度 1200/1400 被 Y1 的 Mt >1000 兜底再÷100，显示成 12/14）
-        let axisLabelConfigY2 = { formatter: (val) => window.currentLang === 'en' ? (typeof val === 'number' ? adaptAxisValueToUnit(val, unitY2, isEn).toLocaleString('en-US') : val) : val };
+        let axisLabelConfigY2 = { formatter: (val) => formatY2AxisTick(val, unitY2, window.currentLang === 'en') };
         // combo 次轴系列的 tooltip 也要按 Y2 单位换算（否则 EN 下 1249 mln $ 被按 Mt 兜底 ÷100 显示成 12.49）
         let y2SeriesRef = { name: null };
 
@@ -10949,6 +11133,9 @@
                 } else {
                     seriesObj.type = 'bar';
                 }
+                // 主看板柱/条形统一柱宽上限（与分析页同口径 44px）：
+                // 未设置时 ECharts 按类别带宽自动拉宽，放大图/少类别图柱子会变得很宽（用户反馈）。
+                seriesObj.barMaxWidth = 44;
                 if (shouldStack) seriesObj.stack = 'total';
                 
                 seriesObj.data = xData.map(x => {
@@ -11162,6 +11349,8 @@
             }
             // percent without subField is unusual, fallback to bar
             if (isPercent && !seriesObj.type) seriesObj.type = 'bar';
+            // 单系列柱/条形统一柱宽上限（与分析页同口径 44px），少类别时柱子不再自动变很宽
+            if (seriesObj.type === 'bar') seriesObj.barMaxWidth = 44;
 
             let seriesList = [seriesObj];
             // 移动平均线：期数由用户在编辑弹窗中设定，单位与当前时间维度粒度一致
@@ -11263,7 +11452,7 @@
                 // （用户截图：风电同比最新月 -18.10 低于轴底 -15）。去掉后次轴按自身数据自适应。
                 option.yAxis.push({
                     type: 'value', name: y2UnitTxt, min: niceMin2r, splitLine: { show: false },
-                    axisLabel: Object.assign({}, axisLabelConfig, { formatter: (v) => (v === null || v === undefined || isNaN(v)) ? '' : (Number(v).toFixed(1) + y2UnitTxt) })
+                    axisLabel: Object.assign({}, axisLabelConfig, { formatter: (v) => (v === null || v === undefined || isNaN(v)) ? '' : (formatY2AxisTick(Number(v), null, window.currentLang === 'en') + y2UnitTxt) })
                 });
                 // 面积+折线组合图：次轴折线与主系列面积同用平滑曲线，避免一条弯、一条直的视觉割裂
                 let y2ObjVirtual = { name: y2Name, type: 'line', yAxisIndex: 1, data: finalY2Data, connectNulls: false, symbol: 'none', showSymbol: false, symbolSize: 0, legendIcon: 'path://M 0 5 L 20 5 L 20 7 L 0 7 Z' };
@@ -11490,6 +11679,10 @@
         // 双轴刻度对齐必须放在升档折算之后：折算会同时改 series 与轴 min/max，
         // 先对齐再折算会让 interval 停留在旧量级。
         if (isComboChartType(config.type)) { try { alignDualAxisTicks(option); } catch (e) {} }
+        // bak219：主/次 Y 轴按整轴统一小数位；放在双轴对齐之后，四条继承路径一并生效
+        try { applyUniformYAxisPrecision(option, window.currentLang === 'en'); } catch (e) {}
+        // bak210：少类别纵向图强制显示全部 X 类目标签（复制/下载/嵌入页经 option 继承）
+        try { fitFewCategoryXLabels(option, chart, 12); } catch (e) {}
         // 缓存最近一次渲染的 option，作为 generateChartEmbedCode 的兜底
         // （让复制嵌入代码不依赖 ECharts 实例仍在内存中）
         try { lastRenderedChartOption[config.id] = option; lastRenderedChartId = config.id; } catch (e) {}
@@ -11758,7 +11951,7 @@
         // 与主图路径 scaleOptionSeriesByLadder 同一时机。此前在这里只缩放年份系列，
         // 区间带随后用未缩放的原始值追加，导致年份线贴底、区间带仍在原量级（用户截图错乱）。
         let unitStrAxis = seasonLadder.unit || unitStr;
-        let axisLabelConfig = { formatter: (val) => window.currentLang === 'en' ? (typeof val === 'number' ? adaptAxisValueToUnit(val, unitStr, isEn).toLocaleString('en-US') : val) : val };
+        let axisLabelConfig = { formatter: (val) => formatY1AxisTick(val, unitStr, window.currentLang === 'en') };
 
         // 收集所有有效值用于 niceMin，避免季节图的数据集中在某个范围却画成 0 基线
         let allVals = [];
@@ -11835,6 +12028,7 @@
         // 数值左缘对齐。与主图同款：end + align:'left' + padding 左移到数值标签左缘。
         // 季节图 containLabel:true，grid.left=48 即数值标签左缘；轴线在 48 + 标签宽 + 8，
         // padding -(8+估宽) 后单位左缘 ≈ 48，与数值左缘对齐。
+        try { applyUniformYAxisPrecision(option, window.currentLang === 'en'); } catch (e) {}
         if (option.yAxis && typeof option.yAxis === 'object' && option.yAxis.name) {
             let yaS = option.yAxis;
             // 复用该轴自身的 axisLabel.formatter（内含 adaptAxisValueToUnit 单位换算），
@@ -11948,7 +12142,7 @@
             chartLadderAxisUnit['chart_' + config.id] = rangeLadder.unit;
         }
         let unitStrAxis = rangeLadder.unit || unitStr;
-        let axisLabelConfig = { formatter: (val) => window.currentLang === 'en' ? (typeof val === 'number' ? adaptAxisValueToUnit(val, unitStr, isEn).toLocaleString('en-US') : val) : val };
+        let axisLabelConfig = { formatter: (val) => formatY1AxisTick(val, unitStr, window.currentLang === 'en') };
 
         let option = {
             tooltip: {
@@ -11992,6 +12186,7 @@
         // 数值左缘对齐。与主图同款：end + align:'left' + padding 左移到数值标签左缘。
         // 季节图 containLabel:true，grid.left=48 即数值标签左缘；轴线在 48 + 标签宽 + 8，
         // padding -(8+估宽) 后单位左缘 ≈ 48，与数值左缘对齐。
+        try { applyUniformYAxisPrecision(option, window.currentLang === 'en'); } catch (e) {}
         if (option.yAxis && typeof option.yAxis === 'object' && option.yAxis.name) {
             let yaS = option.yAxis;
             // 复用该轴自身的 axisLabel.formatter（内含 adaptAxisValueToUnit 单位换算），
@@ -15675,7 +15870,10 @@ function applyChartAnalyticsI18N() {
         // 单位名直接显示在 Y/X 轴上（用户偏好：仪表盘下载图单位放轴上，与画布内图表一致）
         // bak138：grid 兼容对象/数组两种形态 —— 分析图表自建 option 时 grid 是对象，
         // 若只处理数组形态，下载图的紧凑留白就不会生效（标签被底边裁掉）。
-        let _dlApplyGrid = (g) => Object.assign({}, g, { top: bodyTop, bottom: footHeight, left: chartLeftEdge, right: chartRightEdge, containLabel: isDlAnalysis ? false : (g.containLabel !== false) });
+        // bak214：季节图 option 的 containLabel:true 会把 X 轴标签算进 grid 区域、使标签上移约 19px，
+        // 单图成品里 X 轴与来源行间距翻倍（33px vs 其它图 14px）。分析图/季节图统一关掉。
+        let _dlNoContain = isDlAnalysis || (typeof isSeasonalChartConfig === 'function' && isSeasonalChartConfig(config));
+        let _dlApplyGrid = (g) => Object.assign({}, g, { top: bodyTop, bottom: footHeight, left: chartLeftEdge, right: chartRightEdge, containLabel: _dlNoContain ? false : (g.containLabel !== false) });
         if (Array.isArray(opt.grid) && opt.grid.length > 0) {
             opt.grid = opt.grid.map(_dlApplyGrid);
         } else if (opt.grid && typeof opt.grid === 'object') {
@@ -15811,9 +16009,9 @@ function applyChartAnalyticsI18N() {
             console.warn('downloadChartImage compose failed', e);
         }
 
-        // bak209：成品位图输出改为 700×410（内部仍按 520×310 CSS 布局 + 3× 超采样合成，
-        // 字号/留白占比完全不变），从 1560×930 合成画布降采样到 700×410，字边缘更锐利。
-        let OUT_W = 700, OUT_H = 410;
+        // 成品位图输出 600×351（bak220：按旧版 700×410 的宽高比换算高度，视觉大小与旧图一致；
+        // 内部仍按 520×310 CSS 布局 + 3× 超采样合成，字号/留白占比不变），从 1560×930 合成画布降采样。
+        let OUT_W = 600, OUT_H = 351;
         if (SS > 1 || OUT_W !== iw || OUT_H !== ih) {
             let outCv = document.createElement('canvas');
             outCv.width = OUT_W; outCv.height = OUT_H;
@@ -16204,9 +16402,21 @@ function generateChartEmbedCode(chartId) {
             return isEn ? tv.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : tv.toFixed(2);
         };
         // 轴标签 formatter：与仪表盘 axisLabelConfig 完全一致（含 Mt 单位换算），每个轴用自身 unit。
-        const buildAxisFmt = (unit) => (val) => isEn
-            ? (typeof val === 'number' ? adaptAxisValueToUnit(val, unit, isEn).toLocaleString('en-US') : val)
-            : val;
+        const buildAxisFmt = (unit, isSecondary, digits) => (val) => {
+            if (typeof val !== 'number' || !isFinite(val)) return val;
+            let n = adaptAxisValueToUnit(val, unit, isEn);
+            let d = (digits === 0 || digits === 1) ? digits : null;
+            if (d === null && isSecondary) {
+                let isInt = Math.abs(n - Math.round(n)) < 1e-9;
+                return isEn
+                    ? n.toLocaleString('en-US', { minimumFractionDigits: isInt ? 0 : 1, maximumFractionDigits: isInt ? 0 : 1 })
+                    : (isInt ? String(Math.round(n)) : n.toFixed(1));
+            }
+            if (d === null) return isEn ? n.toLocaleString('en-US') : n;
+            return isEn
+                ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })
+                : n.toFixed(d);
+        };
 
         // 复用下载图相同的"option 清理"流程，但保留交互所需的响应式布局
         opt.animation = true;
@@ -16300,6 +16510,8 @@ function generateChartEmbedCode(chartId) {
                 left: embedGridLeft, right: embedGridRight, containLabel: false
             }));
         }
+        // bak210：嵌入页字号 14，少类别纵向图同样强制全显示并按字号加高底部（上方 grid 覆盖会重置 bottom）
+        try { fitFewCategoryXLabels(opt, null, 14); } catch (e) {}
         // 字体规范：Source Sans 3 用于拉丁字符/数字，Noto Sans SC 用于中文（思源黑体 normal 替代）；
         // 给 title / legend / axisLabel / tooltip 统一加上 fontFamily，确保 ECharts 画布里的文字也用同款字体。
         // 注：EMBED_FONT_FAMILY 已定义在函数顶部（避免 TDZ）。
@@ -16322,14 +16534,14 @@ function generateChartEmbedCode(chartId) {
                 ya.axisLabel = Object.assign({}, ya.axisLabel || {}, { fontFamily: EMBED_FONT_FAMILY, fontSize: 14 });
                 // 关键修复：fmt2 只对数值轴生效，避免横向条形图 Y 轴分类标签被转成 NaN
                 let isNumeric = !ya.type || ya.type === 'value' || ya.type === 'log';
-                if (isNumeric) ya.axisLabel.formatter = buildAxisFmt(ya.name);
+                if (isNumeric) ya.axisLabel.formatter = buildAxisFmt(ya.name, yi > 0, ya.axisLabel.__uniformDigits);
                 // 单位名横排置于轴顶端、与 Y 轴数值左边缘对齐（第九轮，与仪表盘主图同款摆放）。
                 // 数值标签用 fmt2（2 位小数）估宽；嵌入页 grid.top(72/36) 已给单位名预留 24px，
                 // nameGap=24 让单位落在图例与最上方数值之间。仅数值轴处理（横向条形图的
                 // category Y 轴无单位名，X 轴单位保持 end/nameGap=5 不变）。
                 if (ya.name && isNumeric) {
                     let isRight = yi > 0;
-                    let labelW = Math.min(estimateYAxisLabelWidth(collectYAxisSeriesValues(opt, yi), 14, buildAxisFmt(ya.name)),
+                    let labelW = Math.min(estimateYAxisLabelWidth(collectYAxisSeriesValues(opt, yi), 14, buildAxisFmt(ya.name, yi > 0, ya.axisLabel.__uniformDigits)),
                         Math.max(0, ((Array.isArray(opt.grid) && opt.grid[0] && typeof opt.grid[0].left === 'number') ? opt.grid[0].left : 48) - 10));
                     ya.nameLocation = 'end';
                     ya.nameGap = 24;
@@ -16634,11 +16846,21 @@ function adaptAxisValueToUnit(val, unitY1, isEn) {
   if (isEn && (unitY1 === 'Mt' || unitY1 === 'USD mn' || unitY1 === 'JPY mn') && Math.abs(val) > 1000) return val / 100;
   return val;
 }
-function buildAxisFmt(unit) {
+function buildAxisFmt(unit, isSecondary, digits) {
   return function (val) {
+    if (typeof val !== 'number' || !isFinite(val)) return val;
+    let n = adaptAxisValueToUnit(val, unit, EMBED_IS_EN);
+    var d = (digits === 0 || digits === 1) ? digits : null;
+    if (d === null && isSecondary) {
+      var isInt = Math.abs(n - Math.round(n)) < 1e-9;
+      return EMBED_IS_EN
+        ? n.toLocaleString('en-US', { minimumFractionDigits: isInt ? 0 : 1, maximumFractionDigits: isInt ? 0 : 1 })
+        : (isInt ? String(Math.round(n)) : n.toFixed(1));
+    }
+    if (d === null) d = 1;
     return EMBED_IS_EN
-      ? (typeof val === 'number' ? adaptAxisValueToUnit(val, unit, EMBED_IS_EN).toLocaleString('en-US') : val)
-      : val;
+      ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })
+      : n.toFixed(d);
   };
 }
 function fmt2(v) {
@@ -16736,12 +16958,12 @@ function applyFmt2(opt) {
       if (!ya) return;
       ya.axisLabel = Object.assign({}, ya.axisLabel || {}, { fontFamily: EMBED_FONT_FAMILY, fontSize: 14 });
       let isNumeric = !ya.type || ya.type === 'value' || ya.type === 'log';
-      if (isNumeric) ya.axisLabel.formatter = buildAxisFmt(ya.name);
+      if (isNumeric) ya.axisLabel.formatter = buildAxisFmt(ya.name, yi > 0, ya.axisLabel.__uniformDigits);
 
 
       if (ya.name && isNumeric) {
         let isRight = yi > 0;
-        let labelW = Math.min(estimateYAxisLabelWidth(collectYAxisSeriesValues(opt, yi), 14, buildAxisFmt(ya.name)),
+        let labelW = Math.min(estimateYAxisLabelWidth(collectYAxisSeriesValues(opt, yi), 14, buildAxisFmt(ya.name, yi > 0, ya.axisLabel.__uniformDigits)),
             Math.max(0, ((Array.isArray(opt.grid) && opt.grid[0] && typeof opt.grid[0].left === 'number') ? opt.grid[0].left : 48) - 10));
         ya.nameLocation = 'end';
         ya.nameGap = 24;
@@ -17121,13 +17343,13 @@ function downloadChartPng(inZoom) {
 
     opt.yAxis.forEach((ya, yi) => {
       if (!ya) return;
-      ya.axisLabel = Object.assign({}, ya.axisLabel || {}, { fontFamily: EMBED_DL_FONT, fontSize: 18, hideOverlap: true, formatter: buildAxisFmt(ya.name) });
+      ya.axisLabel = Object.assign({}, ya.axisLabel || {}, { fontFamily: EMBED_DL_FONT, fontSize: 18, hideOverlap: true, formatter: buildAxisFmt(ya.name, yi > 0, ya.axisLabel.__uniformDigits) });
       ya.nameTextStyle = Object.assign({}, ya.nameTextStyle || {}, { fontSize: 18, color: '#6B7280' });
       if (ya.name) {
         let isRight = yi > 0;
         
         
-        let labelW = Math.min(estimateYAxisLabelWidth(collectYAxisSeriesValues(opt, yi), 18, buildAxisFmt(ya.name)),
+        let labelW = Math.min(estimateYAxisLabelWidth(collectYAxisSeriesValues(opt, yi), 18, buildAxisFmt(ya.name, yi > 0, ya.axisLabel.__uniformDigits)),
             Math.max(0, ((Array.isArray(opt.grid) && opt.grid[0] && typeof opt.grid[0].left === 'number') ? opt.grid[0].left : 96) - 10));
         ya.nameLocation = 'end';
         ya.nameGap = 40;
@@ -18370,9 +18592,15 @@ function setupOverlaySwipe() {
             before += src.length;
             try {
                 let out = await window.Terser.minify(src, {
-                    compress: { passes: 2, drop_console: false, unsafe: false },
-                    mangle: { toplevel: false },     // 顶层函数名必须保留：页面里有大量 onclick="xxx()" 内联调用
-                    format: { comments: false }
+                    // bak215：drop_console 去掉调试日志（含 catch 里的中文错误串），缩小导出源码里
+                    // 可被逆向阅读的"实现痕迹"。Terser 只删 console 调用本身、保留逗号表达式里的
+                    // alert/toast 等副作用（专项已核对数量不变）。顶层函数名仍保留：页面里有大量
+                    // onclick="xxx()" 内联调用，混淆会令按钮全失效。
+                    // bak216：ascii_only 把脚本里的中文/全角说明转成 \uXXXX 转义，源码里不再出现
+                    // 可读的计算字段提示、双语字典等实现文案；浏览器解析后字符串不变，功能零影响。
+                    compress: { passes: 2, drop_console: true, unsafe: false },
+                    mangle: { toplevel: false },
+                    format: { comments: false, ascii_only: true }
                 });
                 if (out && out.code) {
                     new Function(out.code);          // 语法自检，不通过就用原文
@@ -18786,7 +19014,37 @@ function setupOverlaySwipe() {
                 }
             }
 
+            // bak217：只把 KPI 卡片的可见文字/数值转成 HTML 实体后再序列化。
+            // 先在副本的文本节点里放占位符，避免 outerHTML 二次转义导致实体失效；
+            // 序列化完成后把占位符换成 &#xXXXX;，浏览器解析显示与原文完全一致。
+            // 范围仅限 #kpiGrid，标题/综述/图表来源等其它内容保持原样。
+            let kpiEncTokens = [];
+            try {
+                let kpiBox = exportRoot.querySelector('#kpiGrid');
+                if (kpiBox) {
+                    let walker = document.createTreeWalker(kpiBox, NodeFilter.SHOW_TEXT, null);
+                    let textNodes = [];
+                    while (walker.nextNode()) textNodes.push(walker.currentNode);
+                    textNodes.forEach(node => {
+                        let v = node.nodeValue || '';
+                        if (!v.trim()) return;
+                        let token = '@@KPIENC' + kpiEncTokens.length + '@@';
+                        kpiEncTokens.push({ token: token, text: v });
+                        node.nodeValue = token;
+                    });
+                }
+            } catch (e) { kpiEncTokens = []; }
+
             htmlStr = '<!DOCTYPE html>\n' + exportRoot.outerHTML;
+            if (kpiEncTokens.length) {
+                kpiEncTokens.forEach(item => {
+                    let enc = '';
+                    for (const ch of item.text) {
+                        enc += /\s/.test(ch) ? ch : ('&#x' + ch.codePointAt(0).toString(16) + ';');
+                    }
+                    htmlStr = htmlStr.split(item.token).join(enc);
+                });
+            }
             // 第二十九轮：文件名改用仪表板大标题（去掉 Windows 文件名非法字符），便于辨识与归档
             fileName = buildExportFileName(exportLang);
 
