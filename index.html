@@ -8185,6 +8185,9 @@
         // 避免同时选 avg + median 时两条线值相同而被完全覆盖、用户只能看见一条。
         // 例如：avg = 长虚线 [6,3]，median = 短虚线 [2,3]，max = 实线 1.6，min = 点线 [1,4]。
         // 注意：ECharts 不支持 dashArray 属性；自定义 dash 必须用 type 字段（数组形式）。
+        // bak221：折线/面积图里按 X 同期逐点算出的参考线（中位/平均/max/min/P25/P75）改为平滑，
+        // 与主数据线的平滑口径一致；目标线是常量、线性趋势线按定义保持直线，不受影响。
+        let smoothStatLines = (config.type === 'line' || config.type.indexOf('area') >= 0 || (typeof isComboChartType === 'function' && isComboChartType(config.type)));
         let defs = [
             { key: 'avg', label: L('chartAnalyticsAvg', '平均线', 'Average'), color: '#2563EB', dash: [6, 3], width: 1.5 },
             { key: 'median', label: L('chartAnalyticsMedian', '中位线', 'Median'), color: '#7C3AED', dash: [2, 3], width: 1.5 },
@@ -8230,6 +8233,7 @@
                 name: legendName,
                 type: 'line',
                 data: arrData,
+                smooth: smoothStatLines,
                 // ECharts 自定义 dash 图案：type 字段传数组（实线长 + 间隔），不用 dashArray
                 lineStyle: { type: d.dash === null ? 'solid' : d.dash, width: d.width || 1.4, color: d.color },
                 itemStyle: { color: d.color },
@@ -15856,7 +15860,9 @@ function applyChartAnalyticsI18N() {
         let bubbleTitlePad = (config.type === 'bubble') ? 26 : 0;
         let bodyTop = (hasLegend ? (legendTop + legendHeight + 4 + 20) : 32) + bubbleTitlePad;
         // 底部留白：备注行多占一行（约 +24），所以没备注时收紧 24px，让 chart 区扩大、不留大片空白（用户反馈）。
-        let footHeight = note ? 60 : 46;
+        // bak221：底部留白 +4px，让 X 轴标签与右下角 logo 的 sxcoal.com 小字之间留出可见间隙
+        // （原 600×351 成品里两者仅约 6px，视觉上紧贴/遮挡）。
+        let footHeight = note ? 64 : 50;
         // 分析图表：X 类别标签倾斜（30°）。containLabel 对旋转标签会过度预留 → 底部大片空白
         // （用户反馈「空白地方太大」）。改为按最长标签+旋转角手算底部留白（含来源行空间），
         // 并关闭 containLabel，左侧留白按 Y 轴刻度宽度手算，保证不裁刻度、不留空。
@@ -16003,7 +16009,9 @@ function applyChartAnalyticsI18N() {
             ctx.fillText(sourceText, chartLeftEdge, ih - 8);
             // 右下：Sxcoal logo（等比缩放到原 208x58 比例；520 宽画布下宽 76；bak94 逐级减半重采样保清晰，
             // 2026-10-14 起链目标按设备像素（×SS）计算，配合 2× 超采样合成）
-            let ctxLw = 76, ctxLh = Math.round(ctxLw * 58 / 208);
+            // bak221：logo 宽度 76→70（等比高度 21→20），把顶部再下移 ~1px，配合 footHeight +4 让
+            // X 轴标签与 logo 之间留出约 8-9px 间隙；底部仍与来源行对齐。
+            let ctxLw = 70, ctxLh = Math.round(ctxLw * 58 / 208);
             drawImageHiQuality(ctx, logoImg, iw - 14 - ctxLw, ih - 8 - ctxLh + 1, ctxLw, ctxLh, SS);
         } catch (e) {
             console.warn('downloadChartImage compose failed', e);
