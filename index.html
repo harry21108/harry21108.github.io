@@ -1447,8 +1447,26 @@
                 handleFileSelection(f);
             }
         });
-        // 点击一律交给 label[for] 的原生文件选择框（会记住用户最近一次使用的目录）。
-        // 只有拖拽能通过 getAsFileSystemHandle 拿到可重复读取的句柄。
+    // bak232：点击上传优先用 showOpenFilePicker 拿到可复用的文件句柄——原生 input
+    // 只给 File 对象（不含路径/目录），刷新时无法静默重读、也无法定位到上次目录。
+    // 拿到句柄后存 IDB，之后刷新直接重读最新内容、重新选择时从上次文件所在目录开始。
+    // 不支持该 API 的浏览器仍走 label[for=fileInput] 的原生回退。
+    if (dropZone && typeof window.showOpenFilePicker === 'function') {
+        dropZone.addEventListener('click', (e) => {
+            e.preventDefault();
+            pickExcelWithHandle();
+        });
+    }
+    async function pickExcelWithHandle() {
+        let picked = await pickSourceWithHandle('excel');
+        if (picked === 'cancel') return;
+        if (picked === 'fallback' || !picked || !picked.file) {
+            if (fileInput) fileInput.click();
+            return;
+        }
+        rememberSource('excel', picked.file, picked.handle);
+        handleFileSelection(picked.file);
+    }
     }
     if (fileInput) {
         fileInput.addEventListener('change', (e) => {
@@ -1598,15 +1616,7 @@
             await f.slice(0, Math.min(16, f.size)).arrayBuffer();
             return f;
         } catch (err) {
-            let fromDir = await readFromDefaultDir(kind, entry.name);
-            if (!fromDir && await pickDefaultDir(kind)) fromDir = await readFromDefaultDir(kind, entry.name);
-            if (fromDir) {
-                entry.handle = fromDir.handle;
-                entry.file = fromDir.file;
-                __pickerHandles[kind] = fromDir.handle;
-                pickerStore('put', kind, fromDir.handle);
-                return fromDir.file;
-            }
+            // bak232：读不到时直接弹文件选择器（带上次文件的 startIn），不再走"选文件夹再按文件名猜"。
             if (typeof window.showOpenFilePicker === 'function') {
                 let picked = await pickSourceWithHandle(kind);
                 if (picked === 'cancel') return null;
@@ -4216,8 +4226,11 @@
     //     {col:列名|类别=合计&省份=合计} —— 条件用 列名=值 表示、多个条件用 & 连接（全部满足 = AND）；
     //     例：{row:当月发电电量|类别=火电&省份=合计} = 火电的全国合计；条件值加 ! 表示排除。
     //   {yoy:列名}/{mom:列名}/{wow:列名}/{dod:列名}  该列最新期同比/月环比/周环比/日环比（带 ↑↓ 箭头，已着色）
+    //   {yoydiff:列名}/{momdiff:列名}/{wowdiff:列名}/{doddiff:列名}  同口径的绝对变化量（当期−对比期），带 ↑↓ 与原单位
     //   {cum:列名}          YTD 累计（当年截至最新期求和），带单位
     //   {cumpct:列名}       YTD 累计同比（当年累计 vs 去年同区间累计）
+    //   {cumdiff:列名}      YTD 累计变化量（当年累计 vs 去年同区间累计），带 ↑↓ 与原单位
+    //   bak234：变化量占位符可在类型后加 0/1/2 指定小数位（如 {yoydiff0:列名}），缺省 2 位；百分数字段按 pp 输出。
     // 列名/品类用看板上显示的“中文名/英文名”填写，引擎反查 raw 键；未命中占位符原样保留（向后兼容纯文本/HTML）。
     // 第六十三轮：**所有列类占位符都支持 “|品类” 第二参数**（{row}/{col}/{yoy}/{mom}/{wow}/{dod}/{cum}/{cumpct} 均可），
     //   写法与 {row} 完全一致：多品类用 、，, ; + 分隔并合并求和；! 前缀表示排除。
@@ -4557,6 +4570,20 @@
         let arrow = r > 0 ? '↑' : '↓';
         return `<span style="color:${color};font-weight:700;">${arrow}${Math.abs(r).toFixed(2)}${unit}</span>`;
     }
+    // bak234：综述变化量渲染。与 summRateSpan 同箭头/配色，但数值走 summFmt 带原单位（英文千分位、中文不加）；
+    // 百分数字段的差值按百分点（pp）显示，同百分比口径仍固定 2 位。
+    function summChangeSpan(v, col, isEn, digits, isPP) {
+        if (v === null || v === undefined || isNaN(v) || v === 0) {
+            let zero = isPP ? '0.00' + rateDiffUnit(isEn) : summFmt(0, col, isEn, digits);
+            return `<span style="color:#6B7280;font-weight:600;">→${zero}</span>`;
+        }
+        let upColor = isEn ? '#16A34A' : '#DC2626';
+        let downColor = isEn ? '#DC2626' : '#16A34A';
+        let color = v > 0 ? upColor : downColor;
+        let arrow = v > 0 ? '↑' : '↓';
+        let val = isPP ? Math.abs(v).toFixed(2) + rateDiffUnit(isEn) : summFmt(Math.abs(v), col, isEn, digits);
+        return `<span style="color:${color};font-weight:700;">${arrow}${val}</span>`;
+    }
     // bak110：综述引用事实表同环比列（{col}/{row}/{cum} 指向「同比/环比/…」列）时，
     // 与自动计算（{yoy}/{mom}/…）统一渲染为 ↑↓ 箭头 + 红涨绿跌着色，不再输出裸「-7.70 %」。
     // 原表同环比列值已 ×100（用户口径），直接交给 summRateSpan，不做任何缩放。
@@ -4564,6 +4591,10 @@
     function summValueOrRateSpan(col, num, isEn, digits) {
         let v = Number(num);
         if (isRateColumn(col) && isFinite(v)) {
+            // bak234：原生「同比增减量 / 变化量」列虽含同比字样，但值已是绝对量，按变化量带单位显示，不能再当百分比。
+            if (/增减量|变化量|差额|绝对变化|\b(?:change|diff)\b/i.test(col)) {
+                return summChangeSpan(v, col, isEn, digits, false);
+            }
             let isDiff = /百分点|\bpp\b|\bpct\b/i.test(col);
             if (!isDiff) {
                 let base = findBaseValueColumn(col);
@@ -4581,8 +4612,9 @@
     }
     // 第六十三轮：同环比/累计类占位符支持「|品类」第二参数（与 {row} 同款语法，含 ! 排除、多品类合并）。
     // 写法：{yoy:出口量|27011200 - Bituminous Coal、27011900 - Other Coal}
-    // 实现：先把行集收敛到该品类子集，再交给 calcAutoPeriodRate —— 当期/前期都只统计该品类。
-    function summRate(col, rateType, isEn, cat) {
+    // 实现：先把行集收敛到该品类子集，再交给 calcAutoPeriodRate / calcAutoPeriodChange —— 当期/前期都只统计该品类。
+    // bak234：asDiff=true 时改算绝对变化量（{yoydiff} 等），其余原有百分比调用不变。
+    function summRate(col, rateType, isEn, cat, asDiff, digits) {
         let asOf = getEffectiveLatestDate();
         if (!dateColumn || !asOf) return '';
         let rows = filteredData || [];
@@ -4592,9 +4624,11 @@
             rows = m;
         }
         let pp = isPercentPointField(col);
-        let r = calcAutoPeriodRate({ rows: rows, xField: dateColumn, xValue: asOf, valueField: col, agg: pp ? 'avg' : 'sum', rateType: rateType });
+        let calcOpts = { rows: rows, xField: dateColumn, xValue: asOf, valueField: col,
+            agg: pp ? 'avg' : 'sum', rateType: rateType };
+        let r = asDiff ? calcAutoPeriodChange(calcOpts) : calcAutoPeriodRate(calcOpts);
         if (r === null || isNaN(r)) return '';
-        return summRateSpan(r, isEn, pp);
+        return asDiff ? summChangeSpan(r, col, isEn, digits, pp) : summRateSpan(r, isEn, pp);
     }
     function summYtd(col, isEn, cat, digits) {
         let asOf = getEffectiveLatestDate();
@@ -4612,7 +4646,8 @@
         }
         return summValueOrRateSpan(col, calcValueForField(use, col, 'sum', {}), isEn, digits);
     }
-    function summYtdRate(col, isEn, cat) {
+    // bak234：asDiff=true 时改算累计变化量（{cumdiff}），原 {cumpct} 百分比口径不变。
+    function summYtdRate(col, isEn, cat, asDiff, digits) {
         let asOf = getEffectiveLatestDate();
         if (!dateColumn || !asOf) return '';
         let year = asOf.slice(0, 4), prevYear = String(Number(year) - 1);
@@ -4630,9 +4665,9 @@
         let isDiff = isPercentPointField(col);
         let agg = isDiff ? 'avg' : 'sum';
         let c = calcValueForField(cur, col, agg, {}), p = calcValueForField(prev, col, agg, {});
-        if (c === null || p === null || isNaN(c) || isNaN(p) || (!isDiff && p === 0)) return '';
-        let r = isDiff ? (c - p) : (c - p) / p * 100;
-        return summRateSpan(r, isEn, isDiff);
+        if (c === null || p === null || isNaN(c) || isNaN(p) || (!isDiff && !asDiff && p === 0)) return '';
+        let r = (asDiff || isDiff) ? (c - p) : (c - p) / p * 100;
+        return asDiff ? summChangeSpan(r, col, isEn, digits, isDiff) : summRateSpan(r, isEn, isDiff);
     }
     function fillSummaryTemplate(tpl, isEn) {
         if (!tpl) return '';
@@ -4641,10 +4676,12 @@
         let splitArg = a => String(a || '').split('|');
         return tpl.replace(/\{(\w+)(?::([^}]*))?\}/g, function (m, type, arg) {
             let p = splitArg(arg), c = summResolveColumn(p[0], lang), cat = p[1] || '';
-            // bak227：{col0/1/2:…} / {row0/1/2:…} / {cum0/1/2:…} 显式指定小数位；其余占位符写法不变
+            // bak227：{col0/1/2:…} / {row0/1/2:…} / {cum0/1/2:…} 显式指定小数位；
+            // bak234：{yoydiff0/1/2:…} 等变化量占位符同样支持位数后缀
             let dm = /^(col|row|cum)([012])$/.exec(type);
-            let baseType = dm ? dm[1] : type;
-            let digits = dm ? Number(dm[2]) : null;
+            let fm = /^((?:yoy|mom|wow|dod|cum)diff)([012])$/.exec(type);
+            let baseType = dm ? dm[1] : (fm ? fm[1] : type);
+            let digits = (dm || fm) ? Number((dm || fm)[2]) : null;
             switch (baseType) {
                 case 'period': return formatDateLabel(getEffectiveLatestDate(), isEn);
                 case 'ytd': case 'ytdperiod': case 'cumperiod':
@@ -4655,8 +4692,13 @@
                 case 'mom': return summRate(c, 'mom', isEn, cat);
                 case 'wow': return summRate(c, 'wow', isEn, cat);
                 case 'dod': return summRate(c, 'dod', isEn, cat);
+                case 'yoydiff': return summRate(c, 'yoy', isEn, cat, true, digits);
+                case 'momdiff': return summRate(c, 'mom', isEn, cat, true, digits);
+                case 'wowdiff': return summRate(c, 'wow', isEn, cat, true, digits);
+                case 'doddiff': return summRate(c, 'dod', isEn, cat, true, digits);
                 case 'cum': return summYtd(c, isEn, cat, digits);
                 case 'cumpct': return summYtdRate(c, isEn, cat);
+                case 'cumdiff': return summYtdRate(c, isEn, cat, true, digits);
                 default: return m; // 未知占位符原样保留
             }
         });
@@ -16263,10 +16305,12 @@ function applyChartAnalyticsI18N() {
         }
         let legendWidth = w - chartLeftEdge - chartRightEdge;
         let estimateItemWidth = (nm) => {
+            // bak233：改用文本实测宽度。旧估算把英文按 0.6×字号算，长英文名（如 Inner Mongolia）
+            // 会高估约 1.7 倍，6 项时合计跨过 legendWidth 被误判为 2 行，grid.top 多留 16px，
+            // 复制单图的 Y 单位与图例间距被拉大（用户英文堆积柱状图截图）。与 ECharts 同字体栈实测。
             let s = String(nm === null || nm === undefined ? '' : nm);
-            let len = 0;
-            for (let ch of s) len += /[\u4e00-\u9fa5\uff00-\uffef]/.test(ch) ? legendFontSize : legendFontSize * 0.6;
-            return len + 12 + 10; // 图标 12 + itemGap 10
+            let font = '"Source Sans 3", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+            return measureTextPx(s, legendFontSize, font) + 12 + 10; // 图标 12 + itemGap 10
         };
         let legendRows = 1, rowUsed = 0;
         (seriesNames || []).forEach(nm => {
